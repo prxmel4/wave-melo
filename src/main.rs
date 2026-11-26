@@ -25,10 +25,21 @@ fn init_logging() -> Result<(), StartupError> {
     Ok(())
 }
 
+fn gateway_intents() -> serenity::model::gateway::GatewayIntents {
+    serenity::model::gateway::GatewayIntents::GUILDS
+        | serenity::model::gateway::GatewayIntents::GUILD_VOICE_STATES
+}
+
+fn framework_options() -> poise::FrameworkOptions<(), StartupError> {
+    poise::FrameworkOptions::default()
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), StartupError> {
     init_environment()?;
     init_logging()?;
+    let _gateway_intents = gateway_intents();
+    let _framework_options = framework_options();
     tracing::info!("wavemelo bootstrap ready");
     Ok(())
 }
