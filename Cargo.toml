@@ -5,6 +5,13 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "rt",
+    "signal",
+    "sync",
+    "time",
+] }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
