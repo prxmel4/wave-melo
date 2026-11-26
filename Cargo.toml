@@ -54,6 +54,13 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "std",
 ] }
 
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+incremental = false
+strip = "symbols"
+
 [lints.clippy]
 all = { level = "warn", priority = -1 }
 correctness = { level = "deny", priority = -1 }
