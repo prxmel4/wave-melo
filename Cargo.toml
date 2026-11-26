@@ -7,6 +7,7 @@ license = "MIT"
 [dependencies]
 dotenvy = "0.15"
 poise = { version = "0.7.1", default-features = false, features = ["cache", "handle_panics"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 serenity = { version = "0.12.5", default-features = false, features = [
     "builder",
     "cache",
@@ -17,6 +18,25 @@ serenity = { version = "0.12.5", default-features = false, features = [
     "rustls_backend",
     "utils",
     "voice",
+] }
+songbird = { version = "0.6.1", default-features = false, features = [
+    "builtin-queue",
+    "driver",
+    "gateway",
+    "rustls",
+    "serenity",
+    "tungstenite",
+] }
+symphonia = { version = "0.5.2", default-features = false, features = [
+    "aac",
+    "flac",
+    "isomp4",
+    "mkv",
+    "mp3",
+    "ogg",
+    "pcm",
+    "vorbis",
+    "wav",
 ] }
 thiserror = "2"
 tokio = { version = "1", default-features = false, features = [
