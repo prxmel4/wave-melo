@@ -1,0 +1,42 @@
+# Cargo build artifacts
+/target/
+**/target/
+**/*.rs.bk
+*.pdb
+*.dylib
+*.dll
+*.so
+*.exe
+
+# Test and profiling output
+/coverage/
+**/coverage/
+*.profraw
+*.profdata
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+
+# YouTube cookies (never commit these)
+cookies.txt
+cookies*.txt
+**/cookies.txt
+**/cookies*.txt
+*.cookies
+
+# Logs
+*.log
+/logs/
+**/logs/
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
