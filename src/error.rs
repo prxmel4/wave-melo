@@ -56,3 +56,68 @@ impl BotError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::BotError;
+    use crate::config::ConfigError;
+
+    #[test]
+    fn config_error_display_and_user_message() {
+        let error = BotError::from(ConfigError::MissingDiscordToken);
+
+        assert_eq!(
+            error.to_string(),
+            "configuration error: DISCORD_TOKEN is not set"
+        );
+        assert_eq!(
+            error.user_message(),
+            "การตั้งค่าของบอทไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ"
+        );
+    }
+
+    #[test]
+    fn displays_internal_detail_for_diagnostics() {
+        let error = BotError::InvalidQuery("missing-query".to_owned());
+        assert_eq!(error.to_string(), "invalid playback query: missing-query");
+
+        let error = BotError::Voice("permission denied".to_owned());
+        assert_eq!(
+            error.to_string(),
+            "voice connection failed: permission denied"
+        );
+    }
+
+    #[test]
+    fn maps_simple_variants_to_thai_user_messages() {
+        let cases = [
+            (BotError::NotInVoice, "คุณต้องอยู่ในห้องเสียงก่อนใช้คำสั่งนี้"),
+            (BotError::QueueEmpty, "คิวเพลงว่างอยู่"),
+            (
+                BotError::InvalidQuery(String::new()),
+                "รูปแบบลิงก์หรือคำค้นหาไม่ถูกต้อง",
+            ),
+            (
+                BotError::YtDlp("failed".to_owned()),
+                "ไม่สามารถดึงข้อมูลเพลงได้ กรุณาลองใหม่ในภายหลัง",
+            ),
+            (
+                BotError::Logging("subscriber".to_owned()),
+                "การตั้งค่าของบอทไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(error.user_message(), expected);
+        }
+    }
+
+    #[test]
+    fn user_message_does_not_leak_internal_details() {
+        let marker = "internal-only-marker";
+        let error = BotError::YtDlp(marker.to_owned());
+
+        assert!(error.to_string().contains(marker));
+        assert!(!error.user_message().contains(marker));
+    }
+}
