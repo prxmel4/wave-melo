@@ -22,7 +22,7 @@ Result: 47 unit tests passed, 0 failed.
 ## Release artifact
 
 - `cargo build --release`: passed
-- `target/release/wavemelo.exe`: 15,121,408 bytes
+- `target/release/wavemelo.exe`: 15,122,944 bytes
 
 The release profile uses `opt-level = "z"`, `lto = "thin"`, one codegen unit, no incremental artifacts, and stripped symbols to keep builds practical on low-spec VPS hosts.
 

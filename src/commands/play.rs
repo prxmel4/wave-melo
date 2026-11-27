@@ -15,6 +15,8 @@ pub async fn play(
     ctx: poise::Context<'_, BotData, BotError>,
     #[description = "YouTube URL or search query"] query: String,
 ) -> Result<(), BotError> {
+    ctx.defer().await?;
+
     let (guild_id, channel_id) = author_voice_channel(ctx)?;
     if !channel_is_cached(ctx.cache(), guild_id, channel_id) {
         return Err(BotError::Voice("voice channel is not available".to_owned()));

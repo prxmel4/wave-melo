@@ -15,6 +15,8 @@ fn command_guild(ctx: poise::Context<'_, BotData, BotError>) -> Result<GuildId, 
 /// Join your current voice channel.
 #[poise::command(slash_command, guild_only)]
 pub async fn join(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotError> {
+    ctx.defer().await?;
+
     let (guild_id, channel_id) = author_voice_channel(ctx)?;
     if !channel_is_cached(ctx.cache(), guild_id, channel_id) {
         return Err(BotError::Voice("voice channel is not available".to_owned()));
