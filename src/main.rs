@@ -19,10 +19,6 @@ fn gateway_intents() -> serenity::model::gateway::GatewayIntents {
         | serenity::model::gateway::GatewayIntents::GUILD_VOICE_STATES
 }
 
-fn framework_options() -> poise::FrameworkOptions<(), BotError> {
-    poise::FrameworkOptions::default()
-}
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), BotError> {
     let _config_type: Option<AppConfig> = None;
@@ -30,7 +26,7 @@ async fn main() -> Result<(), BotError> {
     init_environment()?;
     wavemelo::logging::init_logging()?;
     let _gateway_intents = gateway_intents();
-    let _framework_options = framework_options();
+    let _framework_options = wavemelo::bot::framework_options();
     tracing::info!("wavemelo bootstrap ready");
     Ok(())
 }
