@@ -114,3 +114,134 @@ impl AppConfig {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{AppConfig, ConfigError};
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    fn variables(values: &[(&str, &str)]) -> HashMap<String, String> {
+        values
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect()
+    }
+
+    fn temporary_cookie_file() -> PathBuf {
+        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "wavemelo-cookies-{}-{unique}.txt",
+            std::process::id()
+        ));
+        fs::write(&path, "# Netscape HTTP Cookie File\n").expect("write test cookie file");
+        path
+    }
+
+    #[test]
+    fn loads_token_with_defaults() {
+        let config = AppConfig::from_map(&variables(&[("DISCORD_TOKEN", "test-token")]))
+            .expect("valid configuration");
+
+        assert_eq!(config.discord_token, "test-token");
+        assert_eq!(config.ytdlp_binary, "yt-dlp");
+        assert_eq!(config.youtube_cookies_path, None);
+    }
+
+    #[test]
+    fn loads_custom_ytdlp_binary() {
+        let config = AppConfig::from_map(&variables(&[
+            ("DISCORD_TOKEN", "test-token"),
+            ("YTDLP_BINARY", "  /usr/local/bin/yt-dlp  "),
+        ]))
+        .expect("valid configuration");
+
+        assert_eq!(config.ytdlp_binary, "/usr/local/bin/yt-dlp");
+    }
+
+    #[test]
+    fn loads_existing_cookies_file() {
+        let file = temporary_cookie_file();
+        let path = file.to_string_lossy();
+        let config = AppConfig::from_map(&variables(&[
+            ("DISCORD_TOKEN", "test-token"),
+            ("YOUTUBE_COOKIES_PATH", &path),
+        ]))
+        .expect("valid configuration");
+
+        assert_eq!(config.youtube_cookies_path.as_deref(), Some(path.as_ref()));
+        fs::remove_file(file).expect("remove test cookie file");
+    }
+
+    #[test]
+    fn rejects_missing_or_empty_token() {
+        assert_eq!(
+            AppConfig::from_map(&HashMap::new()).unwrap_err(),
+            ConfigError::MissingDiscordToken
+        );
+        assert_eq!(
+            AppConfig::from_map(&variables(&[("DISCORD_TOKEN", "   ")])).unwrap_err(),
+            ConfigError::MissingDiscordToken
+        );
+    }
+
+    #[test]
+    fn rejects_token_with_whitespace() {
+        assert_eq!(
+            AppConfig::from_map(&variables(&[("DISCORD_TOKEN", "token with space")])).unwrap_err(),
+            ConfigError::InvalidDiscordToken
+        );
+    }
+
+    #[test]
+    fn rejects_missing_cookies_file() {
+        assert_eq!(
+            AppConfig::from_map(&variables(&[
+                ("DISCORD_TOKEN", "test-token"),
+                ("YOUTUBE_COOKIES_PATH", "does-not-exist.txt"),
+            ]))
+            .unwrap_err(),
+            ConfigError::InvalidCookiesPath
+        );
+    }
+
+    #[test]
+    fn treats_blank_cookies_path_as_absent() {
+        let config = AppConfig::from_map(&variables(&[
+            ("DISCORD_TOKEN", "test-token"),
+            ("YOUTUBE_COOKIES_PATH", "   "),
+        ]))
+        .expect("valid configuration");
+
+        assert_eq!(config.youtube_cookies_path, None);
+    }
+
+    #[test]
+    fn rejects_blank_ytdlp_binary() {
+        assert_eq!(
+            AppConfig::from_map(&variables(&[
+                ("DISCORD_TOKEN", "test-token"),
+                ("YTDLP_BINARY", "   "),
+            ]))
+            .unwrap_err(),
+            ConfigError::InvalidYtdlpBinary
+        );
+    }
+
+    #[test]
+    fn validates_existing_configuration() {
+        let mut config = AppConfig::from_map(&variables(&[("DISCORD_TOKEN", "test-token")]))
+            .expect("valid configuration");
+        assert!(config.validate().is_ok());
+
+        config.discord_token.clear();
+        assert_eq!(
+            config.validate().unwrap_err(),
+            ConfigError::MissingDiscordToken
+        );
+    }
+}
