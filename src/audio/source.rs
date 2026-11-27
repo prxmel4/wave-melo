@@ -10,8 +10,13 @@ pub async fn build_source(
     ytdlp_binary: &'static str,
     query: &Query,
     requester: &str,
+    cookies_path: Option<&str>,
 ) -> Result<(Input, TrackMetadata), BotError> {
     let source = YoutubeDl::new_ytdl_like(ytdlp_binary, client, query.as_str().to_owned());
+    let source = match cookies_path {
+        Some(path) => source.user_args(vec!["--cookies".to_owned(), path.to_owned()]),
+        None => source,
+    };
 
     let mut probe = source.clone();
     let metadata = probe
