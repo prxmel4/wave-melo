@@ -41,6 +41,9 @@ pub async fn leave(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), Bot
     let guild_id = command_guild(ctx)?;
     let data = ctx.data();
 
+    let lock = data.guild_lock(guild_id).await;
+    let guard = lock.lock().await;
+    let _generation = data.bump_generation(guild_id).await;
     clear_queue(data, guild_id).await;
     if let Some(current) = take_current(data, guild_id).await {
         current
@@ -52,6 +55,8 @@ pub async fn leave(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), Bot
         .leave(guild_id)
         .await
         .map_err(|error| BotError::Voice(error.to_string()))?;
+    drop(guard);
+    data.remove_guild_state(guild_id).await;
 
     ctx.send(CreateReply::default().embed(embeds::success("ออกจากห้องเสียงแล้ว", "ล้างคิวเพลงเรียบร้อย")))
         .await?;
