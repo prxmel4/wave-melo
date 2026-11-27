@@ -1,3 +1,4 @@
+pub mod events;
 pub mod metadata;
 pub mod query;
 pub mod source;
