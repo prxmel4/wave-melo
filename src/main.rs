@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use thiserror::Error;
+use wavemelo::config::AppConfig;
 
 // Songbird needs Symphonia's registry to register the enabled audio codecs.
 use symphonia as _;
@@ -50,6 +51,7 @@ fn voice_manager() -> Arc<songbird::Songbird> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), StartupError> {
+    let _config_type: Option<AppConfig> = None;
     init_environment()?;
     init_logging()?;
     let _gateway_intents = gateway_intents();
