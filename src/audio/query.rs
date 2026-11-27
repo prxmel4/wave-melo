@@ -63,3 +63,84 @@ pub fn classify(input: &str) -> Result<Query, BotError> {
         Ok(Query::Search(normalize_search(trimmed)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{classify, normalize_search, Query};
+    use crate::error::BotError;
+
+    #[test]
+    fn keeps_http_and_https_urls() {
+        assert_eq!(
+            classify("https://youtu.be/abc123").unwrap(),
+            Query::Url("https://youtu.be/abc123".to_owned())
+        );
+        assert_eq!(
+            classify("http://example.com/audio.mp3").unwrap(),
+            Query::Url("http://example.com/audio.mp3".to_owned())
+        );
+    }
+
+    #[test]
+    fn adds_scheme_to_bare_youtube_urls() {
+        assert_eq!(
+            classify("youtube.com/watch?v=abc").unwrap(),
+            Query::Url("https://youtube.com/watch?v=abc".to_owned())
+        );
+        assert_eq!(
+            classify("youtu.be/abc").unwrap(),
+            Query::Url("https://youtu.be/abc".to_owned())
+        );
+        assert_eq!(
+            classify("WWW.YouTube.com/watch?v=abc").unwrap(),
+            Query::Url("https://WWW.YouTube.com/watch?v=abc".to_owned())
+        );
+    }
+
+    #[test]
+    fn normalizes_plain_text_to_ytsearch() {
+        assert_eq!(
+            classify("泰国 เพลง").unwrap(),
+            Query::Search("ytsearch:泰国 เพลง".to_owned())
+        );
+    }
+
+    #[test]
+    fn trims_surrounding_whitespace() {
+        assert_eq!(
+            classify("  https://youtu.be/abc  ").unwrap(),
+            Query::Url("https://youtu.be/abc".to_owned())
+        );
+        assert_eq!(
+            classify("  ลูก(thai)  ").unwrap(),
+            Query::Search("ytsearch:ลูก(thai)".to_owned())
+        );
+    }
+
+    #[test]
+    fn preserves_existing_search_prefixes() {
+        for prefix in ["ytsearch:", "ytmsearch:", "scsearch:", "YTSearch:"] {
+            let query = format!("{prefix}test");
+            assert_eq!(normalize_search(&query), query);
+            assert_eq!(classify(&query).unwrap(), Query::Search(query));
+        }
+    }
+
+    #[test]
+    fn rejects_empty_input() {
+        assert!(matches!(classify(""), Err(BotError::InvalidQuery(_))));
+        assert!(matches!(
+            classify("   \t\n"),
+            Err(BotError::InvalidQuery(_))
+        ));
+    }
+
+    #[test]
+    fn query_as_str_returns_inner_value() {
+        let url = classify("https://example.com").unwrap();
+        assert_eq!(url.as_str(), "https://example.com");
+
+        let search = classify("hello").unwrap();
+        assert_eq!(search.as_str(), "ytsearch:hello");
+    }
+}
