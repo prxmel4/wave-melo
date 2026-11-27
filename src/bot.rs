@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use poise::FrameworkError;
+use poise::{FrameworkContext, FrameworkError};
+use serenity::client::FullEvent;
 use serenity::model::gateway::GatewayIntents;
 use songbird::SerenityInit;
 
@@ -13,6 +14,7 @@ pub fn framework_options() -> poise::FrameworkOptions<BotData, BotError> {
     poise::FrameworkOptions {
         commands: Vec::new(),
         on_error: |error| Box::pin(on_error(error)),
+        event_handler: |ctx, event| Box::pin(event_handler(ctx, event)),
         ..Default::default()
     }
 }
@@ -25,6 +27,22 @@ pub fn gateway_intents() -> GatewayIntents {
 /// Create the shared Songbird manager used by the Serenity client.
 pub fn voice_manager() -> Arc<songbird::Songbird> {
     songbird::Songbird::serenity()
+}
+
+/// Log safe startup diagnostics when the gateway becomes ready.
+pub async fn event_handler(
+    framework: FrameworkContext<'_, BotData, BotError>,
+    event: &FullEvent,
+) -> Result<(), BotError> {
+    if let FullEvent::Ready { data_about_bot } = event {
+        tracing::info!(
+            bot_user = %data_about_bot.user.tag(),
+            guild_count = data_about_bot.guilds.len(),
+            shard_id = %framework.serenity_context.shard_id,
+            "wavemelo ready"
+        );
+    }
+    Ok(())
 }
 
 /// Log internal failures and reply privately without leaking details.
