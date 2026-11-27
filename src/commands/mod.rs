@@ -1,9 +1,16 @@
 pub mod ping;
 pub mod play;
+pub mod playback;
 pub mod voice;
 
 pub use ping::ping;
 
 pub fn commands() -> Vec<poise::Command<crate::state::BotData, crate::error::BotError>> {
-    vec![ping(), play::play(), voice::join(), voice::leave()]
+    vec![
+        ping(),
+        play::play(),
+        playback::skip(),
+        voice::join(),
+        voice::leave(),
+    ]
 }
