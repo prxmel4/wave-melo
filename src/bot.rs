@@ -12,7 +12,7 @@ use crate::state::BotData;
 /// Build Poise framework options for the bot.
 pub fn framework_options() -> poise::FrameworkOptions<BotData, BotError> {
     poise::FrameworkOptions {
-        commands: Vec::new(),
+        commands: crate::commands::commands(),
         on_error: |error| Box::pin(on_error(error)),
         event_handler: |ctx, event| Box::pin(event_handler(ctx, event)),
         ..Default::default()
