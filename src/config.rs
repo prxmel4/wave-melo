@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 
+use serenity::model::id::GuildId;
 use thiserror::Error;
 
 /// Runtime configuration for the wavemelo bot.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct AppConfig {
     /// Discord bot token used to authenticate the gateway and HTTP client.
     pub discord_token: String,
@@ -13,6 +14,19 @@ pub struct AppConfig {
     pub youtube_cookies_path: Option<String>,
     /// Optional override for the yt-dlp executable name or path.
     pub ytdlp_binary: String,
+    /// Optional guild ID for instant slash command registration during development.
+    pub discord_guild_id: Option<GuildId>,
+}
+
+impl std::fmt::Debug for AppConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppConfig")
+            .field("discord_token", &"[redacted]")
+            .field("youtube_cookies_path", &self.youtube_cookies_path)
+            .field("ytdlp_binary", &self.ytdlp_binary)
+            .field("discord_guild_id", &self.discord_guild_id)
+            .finish()
+    }
 }
 
 /// Configuration errors that never contain secret values.
@@ -26,6 +40,8 @@ pub enum ConfigError {
     InvalidCookiesPath,
     #[error("YTDLP_BINARY must not be empty")]
     InvalidYtdlpBinary,
+    #[error("DISCORD_GUILD_ID must be a non-zero integer")]
+    InvalidGuildId,
 }
 
 impl AppConfig {
@@ -87,10 +103,29 @@ impl AppConfig {
             return Err(ConfigError::InvalidYtdlpBinary);
         }
 
+        let guild_id_raw = values
+            .get("DISCORD_GUILD_ID")
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty());
+        let discord_guild_id = match guild_id_raw {
+            Some(raw) => {
+                let id = raw
+                    .parse::<u64>()
+                    .map_err(|_| ConfigError::InvalidGuildId)?;
+                if id == 0 {
+                    return Err(ConfigError::InvalidGuildId);
+                }
+                Some(GuildId::new(id))
+            }
+            None => None,
+        };
+
         let config = Self {
             discord_token,
             youtube_cookies_path,
             ytdlp_binary,
+            discord_guild_id,
         };
         config.validate()?;
         Ok(config)
@@ -118,6 +153,7 @@ impl AppConfig {
 #[cfg(test)]
 mod tests {
     use super::{AppConfig, ConfigError};
+    use serenity::model::id::GuildId;
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
@@ -150,6 +186,46 @@ mod tests {
         assert_eq!(config.discord_token, "test-token");
         assert_eq!(config.ytdlp_binary, "yt-dlp");
         assert_eq!(config.youtube_cookies_path, None);
+        assert_eq!(config.discord_guild_id, None);
+    }
+
+    #[test]
+    fn loads_guild_id_for_fast_registration() {
+        let config = AppConfig::from_map(&variables(&[
+            ("DISCORD_TOKEN", "test-token"),
+            ("DISCORD_GUILD_ID", "  123456789012345678  "),
+        ]))
+        .expect("valid configuration");
+
+        assert_eq!(
+            config.discord_guild_id,
+            Some(GuildId::new(123_456_789_012_345_678))
+        );
+    }
+
+    #[test]
+    fn treats_blank_guild_id_as_absent() {
+        let config = AppConfig::from_map(&variables(&[
+            ("DISCORD_TOKEN", "test-token"),
+            ("DISCORD_GUILD_ID", "   "),
+        ]))
+        .expect("valid configuration");
+
+        assert_eq!(config.discord_guild_id, None);
+    }
+
+    #[test]
+    fn rejects_invalid_guild_id() {
+        for value in ["not-a-number", "0"] {
+            assert_eq!(
+                AppConfig::from_map(&variables(&[
+                    ("DISCORD_TOKEN", "test-token"),
+                    ("DISCORD_GUILD_ID", value),
+                ]))
+                .unwrap_err(),
+                ConfigError::InvalidGuildId
+            );
+        }
     }
 
     #[test]

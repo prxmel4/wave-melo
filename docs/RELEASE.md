@@ -17,12 +17,12 @@ All checks passed locally:
 - `cargo clippy --all-targets -- -D warnings`
 - `cargo test`
 
-Result: 44 unit tests passed, 0 failed.
+Result: 47 unit tests passed, 0 failed.
 
 ## Release artifact
 
 - `cargo build --release`: passed
-- `target/release/wavemelo.exe`: 15,031,296 bytes
+- `target/release/wavemelo.exe`: 15,121,408 bytes
 
 The release profile uses `opt-level = "z"`, `lto = "thin"`, one codegen unit, no incremental artifacts, and stripped symbols to keep builds practical on low-spec VPS hosts.
 

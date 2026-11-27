@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use poise::{FrameworkContext, FrameworkError};
 use serenity::client::FullEvent;
+use serenity::gateway::ActivityData;
 use serenity::model::gateway::GatewayIntents;
+use serenity::model::user::OnlineStatus;
 use songbird::SerenityInit;
 
 use crate::config::AppConfig;
@@ -35,6 +37,9 @@ pub async fn event_handler(
     event: &FullEvent,
 ) -> Result<(), BotError> {
     if let FullEvent::Ready { data_about_bot } = event {
+        framework
+            .serenity_context
+            .set_presence(Some(ActivityData::listening("/play")), OnlineStatus::Online);
         tracing::info!(
             bot_user = %data_about_bot.user.tag(),
             guild_count = data_about_bot.guilds.len(),
@@ -89,11 +94,50 @@ pub async fn on_error(error: FrameworkError<'_, BotData, BotError>) {
 /// Construct a Serenity client with Poise and Songbird registered.
 pub async fn build_client(config: &AppConfig, data: BotData) -> Result<serenity::Client, BotError> {
     let setup_data = data.clone();
+    let setup_guild_id = config.discord_guild_id;
     let framework = poise::Framework::builder()
         .options(framework_options())
-        .setup(move |_ctx, _ready, _framework| {
+        .setup(move |ctx, _ready, framework| {
             let data = setup_data.clone();
-            Box::pin(async move { Ok(data) })
+            let command_count = framework.options().commands.len();
+            let command_names = framework
+                .options()
+                .commands
+                .iter()
+                .map(|command| command.name.as_ref())
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            Box::pin(async move {
+                if let Some(guild_id) = setup_guild_id {
+                    tracing::info!(
+                        count = command_count,
+                        names = %command_names,
+                        guild_id = %guild_id,
+                        "registering slash commands in guild"
+                    );
+                    poise::builtins::register_in_guild(
+                        ctx,
+                        &framework.options().commands,
+                        guild_id,
+                    )
+                    .await?;
+                } else {
+                    tracing::info!(
+                        count = command_count,
+                        names = %command_names,
+                        "registering slash commands globally"
+                    );
+                    poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                }
+
+                tracing::info!(
+                    count = command_count,
+                    names = %command_names,
+                    "slash commands registered"
+                );
+                Ok(data)
+            })
         })
         .build();
 

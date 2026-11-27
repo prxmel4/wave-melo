@@ -37,6 +37,7 @@ cp .env.example .env
 | Variable | Required | Description |
 | --- | --- | --- |
 | `DISCORD_TOKEN` | Yes | Discord bot token. Never commit it. |
+| `DISCORD_GUILD_ID` | No | Guild ID for instant slash-command registration during testing. Leave empty to register globally (may take up to an hour). |
 | `YOUTUBE_COOKIES_PATH` | No | Path to a Netscape-format `cookies.txt` for YouTube access from hosting providers. Leave empty to disable. |
 | `YTDLP_BINARY` | No | `yt-dlp` executable name or path. Defaults to `yt-dlp`. |
 | `RUST_LOG` | No | `tracing-subscriber` filter, e.g. `info,wavemelo=debug`. |
