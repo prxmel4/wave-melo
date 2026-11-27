@@ -10,6 +10,7 @@ pub fn commands() -> Vec<poise::Command<crate::state::BotData, crate::error::Bot
         ping(),
         play::play(),
         playback::skip(),
+        playback::stop(),
         voice::join(),
         voice::leave(),
     ]

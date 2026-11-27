@@ -1,6 +1,6 @@
 use poise::CreateReply;
 
-use crate::audio::queue::take_current;
+use crate::audio::queue::{clear_queue, take_current};
 use crate::error::BotError;
 use crate::state::BotData;
 use crate::ui::embeds;
@@ -22,5 +22,29 @@ pub async fn skip(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
 
     ctx.send(CreateReply::default().embed(embeds::success("ข้ามเพลงแล้ว", "กำลังเล่นเพลงถัดไปในคิว")))
         .await?;
+    Ok(())
+}
+
+/// Stop playback and clear the queue, staying in the voice channel.
+#[poise::command(slash_command, guild_only)]
+pub async fn stop(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotError> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or_else(|| BotError::Voice("this command must be used in a guild".to_owned()))?;
+
+    let data = ctx.data();
+    clear_queue(data, guild_id).await;
+    if let Some(current) = take_current(data, guild_id).await {
+        current
+            .handle
+            .stop()
+            .map_err(|error| BotError::Track(error.to_string()))?;
+    }
+
+    ctx.send(CreateReply::default().embed(embeds::success(
+        "หยุดเล่นเพลงแล้ว",
+        "ล้างคิวเพลงเรียบร้อย ใช้ /leave เพื่อออกจากห้องเสียง",
+    )))
+    .await?;
     Ok(())
 }
