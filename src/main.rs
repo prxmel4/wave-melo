@@ -14,18 +14,14 @@ fn init_environment() -> Result<(), BotError> {
     Ok(())
 }
 
-fn gateway_intents() -> serenity::model::gateway::GatewayIntents {
-    serenity::model::gateway::GatewayIntents::GUILDS
-        | serenity::model::gateway::GatewayIntents::GUILD_VOICE_STATES
-}
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), BotError> {
     let _config_type: Option<AppConfig> = None;
     let _bot_data_type: Option<BotData> = None;
     init_environment()?;
     wavemelo::logging::init_logging()?;
-    let _gateway_intents = gateway_intents();
+    let _gateway_intents = wavemelo::bot::gateway_intents();
+    let _voice_manager = wavemelo::bot::voice_manager();
     let _framework_options = wavemelo::bot::framework_options();
     tracing::info!("wavemelo bootstrap ready");
     Ok(())
