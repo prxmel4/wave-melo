@@ -106,3 +106,130 @@ pub fn queue(entries: &[QueueEntryView<'_>], page: usize, total_pages: usize) ->
         colors::QUEUE,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{error, format_queue_entry, info, now_playing, queue, success, QueueEntryView};
+    use crate::ui::colors;
+    use serde_json::Value;
+    use serenity::builder::CreateEmbed;
+    use std::time::Duration;
+
+    fn as_value(embed: CreateEmbed) -> Value {
+        serde_json::to_value(embed).expect("serialize embed")
+    }
+
+    #[test]
+    fn info_success_error_set_title_description_and_color() {
+        let cases = [
+            (info("Info", "Details"), colors::INFO),
+            (success("Done", "Saved"), colors::SUCCESS),
+            (error("Oops", "Try again"), colors::ERROR),
+        ];
+
+        for (embed, color) in cases {
+            let value = as_value(embed);
+            assert_eq!(value["color"].as_u64(), Some(u64::from(color)));
+            assert!(value["title"].is_string());
+            assert!(value["description"].is_string());
+        }
+
+        assert_eq!(as_value(info("Info", "Details"))["title"], "Info");
+        assert_eq!(
+            as_value(error("Oops", "Try again"))["description"],
+            "Try again"
+        );
+    }
+
+    #[test]
+    fn now_playing_formats_progress_and_escapes_text() {
+        let embed = as_value(now_playing(
+            "เพลง*unya",
+            Some("https://youtu.be/example"),
+            "@user",
+            Some(Duration::from_secs(125)),
+            Some(Duration::from_secs(5)),
+        ));
+
+        assert_eq!(embed["title"], "กำลังเล่น");
+        assert_eq!(embed["color"], colors::NOW_PLAYING);
+        let fields = embed["fields"].as_array().expect("fields array");
+        assert_eq!(fields[0]["name"], "ตำแหน่ง");
+        assert_eq!(fields[0]["value"], "00:05 / 02:05");
+        assert_eq!(fields[1]["name"], "ขอโดย");
+        assert_eq!(fields[1]["value"], "\\@user");
+        assert!(embed["description"]
+            .as_str()
+            .expect("description")
+            .contains("\\*"));
+    }
+
+    #[test]
+    fn now_playing_handles_missing_duration() {
+        let embed = as_value(now_playing(
+            "Title",
+            None,
+            "user",
+            None,
+            Some(Duration::from_secs(9)),
+        ));
+        let fields = embed["fields"].as_array().expect("fields array");
+        assert_eq!(fields[0]["value"], "00:09");
+    }
+
+    #[test]
+    fn queue_embed_reports_empty_queue() {
+        let embed = as_value(queue(&[], 1, 1));
+        assert_eq!(embed["description"], "คิวเพลงว่างอยู่");
+        assert_eq!(embed["color"], colors::QUEUE);
+    }
+
+    #[test]
+    fn formats_queue_entry_with_url_and_duration() {
+        let entry = QueueEntryView {
+            title: "a*b",
+            url: Some("https://example.com/audio"),
+            requester: "user_name",
+            duration: Some(Duration::from_secs(61)),
+        };
+
+        assert_eq!(
+            format_queue_entry(2, &entry),
+            "2. [a\\*b](<https://example.com/audio>) — 01:01 — user\\_name"
+        );
+    }
+
+    #[test]
+    fn formats_queue_entry_without_url_or_duration() {
+        let entry = QueueEntryView {
+            title: "เพลงไทย",
+            url: None,
+            requester: "คนขอ",
+            duration: None,
+        };
+
+        assert_eq!(format_queue_entry(1, &entry), "1. เพลงไทย — คนขอ");
+    }
+
+    #[test]
+    fn queue_embed_joins_rows_and_clamps_page() {
+        let entries = [
+            QueueEntryView {
+                title: "First",
+                url: None,
+                requester: "A",
+                duration: Some(Duration::from_secs(3)),
+            },
+            QueueEntryView {
+                title: "Second",
+                url: None,
+                requester: "B",
+                duration: None,
+            },
+        ];
+        let embed = as_value(queue(&entries, 0, 0));
+
+        assert_eq!(embed["title"], "คิวเพลง (หน้า 1/1)");
+        assert_eq!(embed["description"], "1. First — 00:03 — A\n2. Second — B");
+    }
+}

@@ -4312,6 +4312,7 @@ dependencies = [
  "dotenvy",
  "poise",
  "reqwest",
+ "serde_json",
  "serenity",
  "songbird",
  "symphonia",
