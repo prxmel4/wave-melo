@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use poise::FrameworkError;
 use serenity::model::gateway::GatewayIntents;
 use songbird::SerenityInit;
 
@@ -11,6 +12,7 @@ use crate::state::BotData;
 pub fn framework_options() -> poise::FrameworkOptions<BotData, BotError> {
     poise::FrameworkOptions {
         commands: Vec::new(),
+        on_error: |error| Box::pin(on_error(error)),
         ..Default::default()
     }
 }
@@ -23,6 +25,30 @@ pub fn gateway_intents() -> GatewayIntents {
 /// Create the shared Songbird manager used by the Serenity client.
 pub fn voice_manager() -> Arc<songbird::Songbird> {
     songbird::Songbird::serenity()
+}
+
+/// Log internal failures and reply privately without leaking details.
+pub async fn on_error(error: FrameworkError<'_, BotData, BotError>) {
+    match error {
+        FrameworkError::Command { ctx, error, .. } => {
+            tracing::error!(error = ?error, command = %ctx.command().name, "command failed");
+            let reply = poise::CreateReply::default()
+                .content(error.user_message())
+                .ephemeral(true);
+            if let Err(reply_error) = ctx.send(reply).await {
+                tracing::warn!(error = ?reply_error, "failed to send error reply");
+            }
+        }
+        FrameworkError::Setup { error, .. } => {
+            tracing::error!(error = ?error, "framework setup failed");
+        }
+        FrameworkError::EventHandler { error, .. } => {
+            tracing::error!(error = ?error, "event handler failed");
+        }
+        other => {
+            tracing::error!(error = ?other, "unhandled framework error");
+        }
+    }
 }
 
 /// Construct a Serenity client with Poise and Songbird registered.

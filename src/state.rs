@@ -36,6 +36,15 @@ pub struct BotData {
     pub current: Arc<Mutex<HashMap<GuildId, CurrentTrack>>>,
 }
 
+impl std::fmt::Debug for BotData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BotData")
+            .field("config", &self.config)
+            .field("ytdlp_binary", &self.ytdlp_binary)
+            .finish_non_exhaustive()
+    }
+}
+
 impl BotData {
     /// Build shared state from validated configuration.
     pub fn new(config: AppConfig) -> Result<Self, BotError> {
