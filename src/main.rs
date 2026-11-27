@@ -24,14 +24,6 @@ fn init_environment() -> Result<(), StartupError> {
     Ok(())
 }
 
-fn init_logging() -> Result<(), StartupError> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .try_init()
-        .map_err(|error| StartupError::Logging(error.to_string()))?;
-    Ok(())
-}
-
 fn gateway_intents() -> serenity::model::gateway::GatewayIntents {
     serenity::model::gateway::GatewayIntents::GUILDS
         | serenity::model::gateway::GatewayIntents::GUILD_VOICE_STATES
@@ -53,7 +45,7 @@ fn voice_manager() -> Arc<songbird::Songbird> {
 async fn main() -> Result<(), StartupError> {
     let _config_type: Option<AppConfig> = None;
     init_environment()?;
-    init_logging()?;
+    wavemelo::logging::init_logging().map_err(StartupError::Logging)?;
     let _gateway_intents = gateway_intents();
     let _framework_options = framework_options();
     let _http_client = http_client()?;
