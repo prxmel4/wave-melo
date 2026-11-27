@@ -47,15 +47,11 @@ pub async fn event_handler(
 
 /// Log internal failures and reply privately without leaking details.
 pub async fn on_error(error: FrameworkError<'_, BotData, BotError>) {
-    match error {
+    let context = error.ctx();
+
+    match &error {
         FrameworkError::Command { ctx, error, .. } => {
             tracing::error!(error = ?error, command = %ctx.command().name, "command failed");
-            let reply = poise::CreateReply::default()
-                .content(error.user_message())
-                .ephemeral(true);
-            if let Err(reply_error) = ctx.send(reply).await {
-                tracing::warn!(error = ?reply_error, "failed to send error reply");
-            }
         }
         FrameworkError::Setup { error, .. } => {
             tracing::error!(error = ?error, "framework setup failed");
@@ -64,8 +60,29 @@ pub async fn on_error(error: FrameworkError<'_, BotData, BotError>) {
             tracing::error!(error = ?error, "event handler failed");
         }
         other => {
-            tracing::error!(error = ?other, "unhandled framework error");
+            tracing::error!(error = ?other, "framework error");
         }
+    }
+
+    let Some(ctx) = context else {
+        return;
+    };
+
+    let message = match &error {
+        FrameworkError::Command { error, .. } => error.user_message(),
+        FrameworkError::GuildOnly { .. } => "คำสั่งนี้ใช้ได้เฉพาะในเซิร์ฟเวอร์",
+        FrameworkError::MissingBotPermissions { .. } => "บอทไม่มีสิทธิ์ที่จำเป็นสำหรับคำสั่งนี้",
+        FrameworkError::MissingUserPermissions { .. } => "คุณไม่มีสิทธิ์ที่จำเป็นสำหรับคำสั่งนี้",
+        FrameworkError::ArgumentParse { .. } => "รูปแบบคำสั่งหรือข้อมูลที่ป้อนไม่ถูกต้อง",
+        FrameworkError::CommandPanic { .. } => "เกิดข้อผิดพลาดภายใน กรุณาลองใหม่ในภายหลัง",
+        _ => "เกิดข้อผิดพลาด กรุณาลองใหม่ในภายหลัง",
+    };
+
+    let reply = poise::CreateReply::default()
+        .content(message)
+        .ephemeral(true);
+    if let Err(reply_error) = ctx.send(reply).await {
+        tracing::warn!(error = ?reply_error, "failed to send error reply");
     }
 }
 
