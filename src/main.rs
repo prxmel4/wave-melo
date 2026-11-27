@@ -1,8 +1,8 @@
 use std::path::Path;
-use std::sync::Arc;
 
 use wavemelo::config::AppConfig;
 use wavemelo::error::BotError;
+use wavemelo::state::BotData;
 
 // Songbird needs Symphonia's registry to register the enabled audio codecs.
 use symphonia as _;
@@ -23,23 +23,14 @@ fn framework_options() -> poise::FrameworkOptions<(), BotError> {
     poise::FrameworkOptions::default()
 }
 
-fn http_client() -> Result<reqwest::Client, BotError> {
-    Ok(reqwest::Client::builder().build()?)
-}
-
-fn voice_manager() -> Arc<songbird::Songbird> {
-    songbird::Songbird::serenity()
-}
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), BotError> {
     let _config_type: Option<AppConfig> = None;
+    let _bot_data_type: Option<BotData> = None;
     init_environment()?;
     wavemelo::logging::init_logging()?;
     let _gateway_intents = gateway_intents();
     let _framework_options = framework_options();
-    let _http_client = http_client()?;
-    let _voice_manager = voice_manager();
     tracing::info!("wavemelo bootstrap ready");
     Ok(())
 }
