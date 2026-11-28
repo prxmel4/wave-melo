@@ -7,6 +7,21 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-28
+
+### Added
+
+- `/queueremove`, `/queuejump`, `/queuemove`, and `/queueclear` slash commands
+  with strict 1-based index validation performed before any queue mutation.
+- Pure queue helpers (`zero_based`, `move_indices`, `reordered`, `jump_plan`)
+  with deterministic tests for boundaries, empty queues, and reorder safety.
+- Same-voice-channel authorization for every queue management command.
+
+### Changed
+
+- `/queueclear` also clears the saved queue-loop snapshot so repeat cycles
+  cannot resurrect removed tracks.
+
 ## [0.6.0] - 2026-11-28
 
 ### Added

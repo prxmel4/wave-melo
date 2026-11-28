@@ -17,6 +17,8 @@ pub enum BotError {
     InvalidLoopMode(String),
     #[error("invalid volume: {0}")]
     InvalidVolume(String),
+    #[error("invalid queue index: {0}")]
+    InvalidQueueIndex(String),
     #[error("no active player in this guild")]
     NoActivePlayer,
     #[error("voice connection failed: {0}")]
@@ -56,6 +58,7 @@ impl BotError {
             }
             Self::Track(_) => "Playback failed. Please try again.",
             Self::InvalidVolume(_) => "Volume must be between 0 and 150.",
+            Self::InvalidQueueIndex(_) => "That queue position is invalid.",
             Self::InvalidSeek(_) => {
                 "That position is invalid or outside this track. Use a value like 90 or 01:30."
             }
