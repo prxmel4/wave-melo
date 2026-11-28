@@ -7,6 +7,23 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-28
+
+### Added
+
+- `/volume <0..150>`, `/pause`, and `/resume` slash commands, backed by a
+  shared playback operations module so future interactive controls reuse the
+  same behavior.
+- Same-voice-channel authorization and active-player checks for all new
+  playback controls.
+- Structured INFO telemetry for volume and pause-state transitions.
+- Deterministic tests for volume boundaries and strict text parsing.
+
+### Changed
+
+- Repeated `/pause` and `/resume` requests are idempotent and report their
+  current state instead of issuing redundant Lavalink updates.
+
 ## [0.3.0] - 2026-11-28
 
 ### Added
