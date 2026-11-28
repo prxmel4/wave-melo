@@ -3,9 +3,10 @@ use std::time::Instant;
 use poise::CreateReply;
 use serenity::model::id::GuildId;
 
+use crate::audio::looping::{build_queue_cycle, loop_copy, strip_loop_markers};
 use crate::error::BotError;
 use crate::playback::ops::{require_same_voice, set_paused, set_volume};
-use crate::state::BotData;
+use crate::state::{BotData, LoopMode};
 use crate::ui::embeds;
 use crate::ui::now_playing::{self, NowPlayingView};
 
@@ -232,6 +233,19 @@ pub async fn now_playing(ctx: poise::Context<'_, BotData, BotError>) -> Result<(
         .unwrap_or("Unknown user")
         .to_owned();
     let length_ms = (!track.info.is_stream && track.info.length > 0).then_some(track.info.length);
+    let session = data.guild_states.session(guild_id.get());
+    let loop_mode = match session.loop_control.mode() {
+        LoopMode::Off => "Off",
+        LoopMode::Track => "Track",
+        LoopMode::Queue => "Queue",
+    };
+    let active_filter = {
+        let details = session.details.lock().await;
+        details
+            .active_filter
+            .clone()
+            .unwrap_or_else(|| "None".to_owned())
+    };
     let view = NowPlayingView {
         title: track.info.title.clone(),
         url: Some(crate::audio::loader::track_url(&track)),
@@ -240,13 +254,98 @@ pub async fn now_playing(ctx: poise::Context<'_, BotData, BotError>) -> Result<(
         position_ms: player.state.position,
         length_ms,
         volume: player.volume,
-        loop_mode: "Off".to_owned(),
-        active_filter: "None".to_owned(),
+        loop_mode: loop_mode.to_owned(),
+        active_filter,
         paused: player.paused,
         connected: player.state.connected,
     };
 
     ctx.send(CreateReply::default().embed(now_playing::build(&view)))
         .await?;
+    Ok(())
+}
+
+/// Set the guild's repeat mode: off, track, or queue.
+#[poise::command(slash_command, guild_only)]
+pub async fn loop_mode(
+    ctx: poise::Context<'_, BotData, BotError>,
+    #[description = "Loop mode: off, track, or queue"] mode: String,
+) -> Result<(), BotError> {
+    let guild_id = command_guild(ctx)?;
+    let parsed = LoopMode::parse(&mode).ok_or_else(|| BotError::InvalidLoopMode(mode.clone()))?;
+    require_same_voice(
+        ctx.cache(),
+        guild_id,
+        ctx.author().id,
+        ctx.cache().current_user().id,
+    )?;
+
+    let data = ctx.data();
+    let lock = data.guild_lock(guild_id).await;
+    let _guard = lock.lock().await;
+    let player_ctx = crate::playback::ops::require_player(data, guild_id)?;
+    let player = player_ctx
+        .get_player()
+        .await
+        .map_err(|error| BotError::Lavalink(error.to_string()))?;
+    let current = player.track.clone();
+    let queue_ref = player_ctx.get_queue();
+    let mut queued = queue_ref
+        .get_queue()
+        .await
+        .map_err(|error| BotError::Lavalink(error.to_string()))?;
+
+    // Remove any injected copies left by a previous mode before applying the
+    // new one. This keeps the user's real queue authoritative.
+    let removed = strip_loop_markers(&mut queued);
+    if removed > 0 {
+        queue_ref
+            .replace(queued.clone())
+            .map_err(|error| BotError::Lavalink(error.to_string()))?;
+    }
+
+    let session = data.guild_states.session(guild_id.get());
+    session.loop_control.set_mode(parsed);
+
+    if current.is_none() {
+        session.loop_control.set_mode(LoopMode::Off);
+        return Err(BotError::NoActivePlayer);
+    }
+
+    match parsed {
+        LoopMode::Off => session.loop_control.clear_snapshot(),
+        LoopMode::Track => {
+            let track = current.as_ref().ok_or(BotError::NoActivePlayer)?;
+            // Two buffered copies cover the short window between Lavalink's
+            // automatic advance and this handler's replenishment.
+            queue_ref
+                .push_to_front(loop_copy(track))
+                .map_err(|error| BotError::Lavalink(error.to_string()))?;
+            queue_ref
+                .push_to_front(loop_copy(track))
+                .map_err(|error| BotError::Lavalink(error.to_string()))?;
+        }
+        LoopMode::Queue => {
+            let cycle = build_queue_cycle(current.as_ref(), &queued);
+            session.loop_control.set_snapshot(cycle.clone());
+            queue_ref
+                .append(cycle.clone())
+                .map_err(|error| BotError::Lavalink(error.to_string()))?;
+            queue_ref
+                .append(cycle)
+                .map_err(|error| BotError::Lavalink(error.to_string()))?;
+        }
+    }
+
+    let mut details = session.details.lock().await;
+    details.mark_manual();
+    drop(details);
+    drop(_guard);
+
+    ctx.send(CreateReply::default().embed(embeds::success(
+        "Loop mode updated",
+        format!("Repeat mode is now **{}**.", parsed.as_str()),
+    )))
+    .await?;
     Ok(())
 }

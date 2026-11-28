@@ -1,6 +1,7 @@
 pub mod client;
 pub mod events;
 pub mod loader;
+pub mod looping;
 pub mod query;
 pub mod voice;
 

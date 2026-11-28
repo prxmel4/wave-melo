@@ -1,14 +1,21 @@
+use std::sync::Arc;
+
 use lavalink_rs::model::events::Events;
 use lavalink_rs::prelude::{LavalinkClient, NodeBuilder, NodeDistributionStrategy};
 
 use crate::audio::events as audio_events;
 use crate::config::AppConfig;
 use crate::error::BotError;
+use crate::state::GuildStateRegistry;
 
 /// Build and connect a Lavalink client using the supplied configuration.
+///
+/// The registry is shared with event handlers so they can coordinate loop
+/// injection and track-end decisions without holding Discord state.
 pub async fn build_lavalink_client(
     config: &AppConfig,
     user_id: u64,
+    registry: Arc<GuildStateRegistry>,
 ) -> Result<LavalinkClient, BotError> {
     let events = Events {
         ready: Some(audio_events::on_ready),
@@ -31,8 +38,13 @@ pub async fn build_lavalink_client(
         session_id: None,
     };
 
-    let client =
-        LavalinkClient::new(events, vec![node], NodeDistributionStrategy::MainFallback).await;
+    let client = LavalinkClient::new_with_data(
+        events,
+        vec![node],
+        NodeDistributionStrategy::MainFallback,
+        registry,
+    )
+    .await;
 
     tracing::info!(
         address = %config.lavalink_address(),

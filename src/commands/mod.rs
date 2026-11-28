@@ -17,6 +17,7 @@ pub fn commands() -> Vec<poise::Command<crate::state::BotData, crate::error::Bot
         playback::resume(),
         playback::seek(),
         playback::now_playing(),
+        playback::loop_mode(),
         queue::queue(),
         voice::join(),
         voice::leave(),

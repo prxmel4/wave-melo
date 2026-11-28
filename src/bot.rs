@@ -10,7 +10,7 @@ use crate::audio::client::build_lavalink_client;
 use crate::audio::events::handle_voice_event;
 use crate::config::AppConfig;
 use crate::error::BotError;
-use crate::state::BotData;
+use crate::state::{BotData, GuildStateRegistry};
 
 /// Build Poise framework options for the bot.
 pub fn framework_options() -> poise::FrameworkOptions<BotData, BotError> {
@@ -113,13 +113,15 @@ pub async fn build_client(config: &AppConfig) -> Result<serenity::Client, BotErr
 
     tracing::info!(user_id = user_id, "fetched bot user ID");
 
-    // Build the Lavalink client.
-    let lavalink = build_lavalink_client(config, user_id).await?;
+    // Build the Lavalink client with a registry shared by event handlers.
+    let guild_states = Arc::new(GuildStateRegistry::default());
+    let lavalink = build_lavalink_client(config, user_id, guild_states.clone()).await?;
 
     let data = BotData {
         config: Arc::new(config.clone()),
         lavalink,
         guild_ops: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        guild_states,
     };
 
     let setup_data = data.clone();

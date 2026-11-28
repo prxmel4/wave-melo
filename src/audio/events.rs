@@ -1,10 +1,11 @@
 use lavalink_rs::model::events::{
-    Ready, TrackEnd, TrackException, TrackStart, TrackStuck, WebSocketClosed,
+    Ready, TrackEnd, TrackEndReason, TrackException, TrackStart, TrackStuck, WebSocketClosed,
 };
 use lavalink_rs::prelude::LavalinkClient;
 use serenity::client::FullEvent;
 
-use crate::state::BotData;
+use crate::audio::looping::{has_loop_marker, has_queue_cycle_marker, loop_copy};
+use crate::state::{BotData, GuildStateRegistry, LoopMode};
 
 /// Owned, `'static` future returned by every Lavalink event handler.
 ///
@@ -44,21 +45,62 @@ pub fn on_track_start(
 }
 
 /// A track ended. lavalink-rs advances its own queue via `player.finish()`
-/// before dispatching this event, so no manual queue mutation is needed here.
+/// before dispatching this event, so loop copies are injected synchronously
+/// here: they are queued before the player's `StartTrack` message is handled.
 pub fn on_track_end(
-    _client: LavalinkClient,
+    client: LavalinkClient,
     _session_id: String,
     event: &TrackEnd,
 ) -> HandlerFuture {
     let guild_id = event.guild_id.0;
-    let reason = format!("{:?}", event.reason);
+    let reason = event.reason.clone();
+    let track = event.track.clone();
     Box::pin(async move {
         tracing::info!(
             event = "track_end",
             guild_id = %guild_id,
-            reason = %reason,
+            reason = ?reason,
             "track ended"
         );
+
+        if reason != TrackEndReason::Finished {
+            return;
+        }
+        let Ok(registry) = client.data::<GuildStateRegistry>() else {
+            return;
+        };
+        let Some(session) = registry.existing_session(guild_id) else {
+            return;
+        };
+        let Some(player_ctx) = client.get_player_context(guild_id) else {
+            return;
+        };
+        let queue = player_ctx.get_queue();
+        let data = track.user_data.as_ref();
+
+        match session.loop_control.mode() {
+            LoopMode::Off => {}
+            LoopMode::Track => {
+                // Only replenish injected copies; the first natural end is
+                // covered by the two copies queued when track loop was enabled.
+                if has_loop_marker(data) {
+                    if let Err(error) = queue.push_to_front(loop_copy(&track)) {
+                        tracing::warn!(guild_id = %guild_id, error = %error, "failed to replenish track loop");
+                    }
+                }
+            }
+            LoopMode::Queue => {
+                // The final entry of each injected cycle carries the marker.
+                if has_queue_cycle_marker(data) {
+                    let cycle = session.loop_control.snapshot();
+                    if cycle.is_empty() {
+                        tracing::warn!(guild_id = %guild_id, "queue loop snapshot is empty");
+                    } else if let Err(error) = queue.append(cycle) {
+                        tracing::warn!(guild_id = %guild_id, error = %error, "failed to replenish queue loop");
+                    }
+                }
+            }
+        }
     })
 }
 
