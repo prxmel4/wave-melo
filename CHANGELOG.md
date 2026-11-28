@@ -7,6 +7,19 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-28
+
+### Added
+
+- `/filter <preset>` with six Lavalink-backed presets: `bassboost`,
+  `nightcore`, `vaporwave`, `8d`, `karaoke`, and `clear`.
+- Autocomplete for filter preset names.
+- `src/audio/filters.rs` with pure preset builders and deterministic tests.
+
+### Changed
+
+- Active filter state is stored in guild state for `/nowplaying` display.
+
 ## [0.10.0] - 2026-11-28
 
 ### Added
