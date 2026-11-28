@@ -139,6 +139,7 @@ cargo run
 | `/seek <position>` | Seek to `90`, `01:30`, or `00:01:30` seconds |
 | `/nowplaying` | Show track, position, volume, loop, filter, and status |
 | `/loop <off\|track\|queue>` | Set repeat mode for this guild |
+| `/filter <preset>` | Apply bassboost, nightcore, vaporwave, 8d, karaoke, or clear |
 | `/queue` | Show the current track and the first page of queued tracks |
 | `/queueremove <index>` | Remove a queued track by its 1-based position |
 | `/queuejump <index>` | Play a queued track immediately |

@@ -9,6 +9,14 @@ pub const MAX_SUGGESTIONS: usize = 5;
 pub const MAX_CHOICE_CHARS: usize = 100;
 
 const LOOP_MODES: [&str; 3] = ["off", "track", "queue"];
+const FILTER_PRESETS: [&str; 6] = [
+    "bassboost",
+    "nightcore",
+    "vaporwave",
+    "8d",
+    "karaoke",
+    "clear",
+];
 
 /// Trim a suggestion to Discord's character limit without splitting Unicode.
 pub fn clamp_choice(value: &str) -> String {
@@ -41,6 +49,29 @@ pub fn loop_choices(partial: &str) -> Vec<String> {
         .take(MAX_SUGGESTIONS)
         .map(|mode| clamp_choice(mode))
         .collect()
+}
+
+/// Static suggestions for `/filter <preset>`.
+pub fn filter_preset_choices(partial: &str) -> Vec<String> {
+    let needle = partial.trim().to_ascii_lowercase();
+    FILTER_PRESETS
+        .iter()
+        .filter(|preset| needle.is_empty() || preset.contains(&needle))
+        .take(MAX_SUGGESTIONS)
+        .map(|preset| clamp_choice(preset))
+        .collect()
+}
+
+/// Autocomplete callback for `/filter <preset>`.
+pub async fn filter_preset(
+    _ctx: poise::Context<'_, BotData, BotError>,
+    partial: &str,
+) -> serenity::builder::CreateAutocompleteResponse {
+    let choices = filter_preset_choices(partial)
+        .into_iter()
+        .map(serenity::builder::AutocompleteChoice::from)
+        .collect();
+    serenity::builder::CreateAutocompleteResponse::new().set_choices(choices)
 }
 
 /// Autocomplete callback for `/loop <mode>`.
@@ -78,7 +109,10 @@ pub async fn play_query(
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_choice, filter_choices, loop_choices, MAX_CHOICE_CHARS, MAX_SUGGESTIONS};
+    use super::{
+        clamp_choice, filter_choices, filter_preset_choices as preset_choices, loop_choices,
+        MAX_CHOICE_CHARS, MAX_SUGGESTIONS,
+    };
 
     #[test]
     fn loop_choices_follow_the_partial_input() {
@@ -101,5 +135,12 @@ mod tests {
         assert_eq!(filter_choices(&values, "track").len(), MAX_SUGGESTIONS);
         assert_eq!(filter_choices(&values, "TRACK 9"), vec!["Track 9"]);
         assert_eq!(filter_choices(&values, "missing").len(), 0);
+    }
+
+    #[test]
+    fn filter_presets_follow_the_partial_input() {
+        assert_eq!(preset_choices("").len(), MAX_SUGGESTIONS);
+        assert_eq!(preset_choices("NIGHT"), vec!["nightcore"]);
+        assert!(preset_choices("missing").is_empty());
     }
 }
