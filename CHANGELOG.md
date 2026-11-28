@@ -7,6 +7,22 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-28
+
+### Added
+
+- Interactive Now Playing controls: pause/resume, skip, stop, and volume +/-.
+- Strict component-ID grammar with canonical numeric fields, generation
+  stamps, and guild binding; foreign or malformed IDs are ignored or rejected.
+- Generation counters invalidate old buttons after any track transition,
+  preventing duplicate skips and stale controls.
+
+### Changed
+
+- `/nowplaying` now renders from a single shared player snapshot used by both
+  commands and component interactions.
+- All interactive controls require the actor to be in the bot's voice channel.
+
 ## [0.8.0] - 2026-11-28
 
 ### Added
