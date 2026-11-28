@@ -7,6 +7,21 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-28
+
+### Added
+
+- Slash-command autocomplete: `/loop` suggests `off`, `track`, and `queue`;
+  `/play` suggests up to five recently played titles from bounded local
+  history.
+- Pure autocomplete helpers with Unicode-safe 100-character clipping and
+  case-insensitive filtering, covered by deterministic tests.
+
+### Changed
+
+- Track starts now update bounded per-guild history, enabling query suggestions
+  without external services or network calls.
+
 ## [0.7.1] - 2026-11-28
 
 ### Fixed
