@@ -133,6 +133,9 @@ cargo run
 | `/play <query>` | Play a URL or search YouTube; queues when busy |
 | `/skip` | Skip the current track |
 | `/stop` | Stop playback and clear the queue (stays connected) |
+| `/volume <0..150>` | Set playback volume (100 = default level) |
+| `/pause` | Pause the current track (same voice channel required) |
+| `/resume` | Resume a paused track (same voice channel required) |
 | `/queue` | Show the current track and the next queued tracks |
 | `/join` | Join your current voice channel |
 | `/leave` | Leave voice and clear the queue |

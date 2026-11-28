@@ -11,6 +11,10 @@ pub enum BotError {
     Logging(String),
     #[error("Discord API error")]
     Discord(Box<serenity::Error>),
+    #[error("invalid volume: {0}")]
+    InvalidVolume(String),
+    #[error("no active player in this guild")]
+    NoActivePlayer,
     #[error("voice connection failed: {0}")]
     Voice(String),
     #[error("track operation failed: {0}")]
@@ -47,6 +51,8 @@ impl BotError {
                 "Could not join the voice channel. Please check the bot's permissions."
             }
             Self::Track(_) => "Playback failed. Please try again.",
+            Self::InvalidVolume(_) => "Volume must be between 0 and 150.",
+            Self::NoActivePlayer => "No active player here. Use /play first.",
             Self::InvalidQuery(_) => "The link or search query is invalid.",
             Self::NotInVoice => "You must join a voice channel before using this command.",
             Self::QueueEmpty => "The queue is empty.",
