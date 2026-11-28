@@ -16,7 +16,9 @@ const MAX_QUEUE_SIZE: usize = 200;
 #[poise::command(slash_command, guild_only)]
 pub async fn play(
     ctx: poise::Context<'_, BotData, BotError>,
-    #[description = "YouTube URL or search query"] query: String,
+    #[description = "YouTube URL or search query"]
+    #[autocomplete = "crate::autocomplete::play_query"]
+    query: String,
 ) -> Result<(), BotError> {
     let command_started = Instant::now();
     ctx.defer().await?;

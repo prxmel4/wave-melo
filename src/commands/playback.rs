@@ -269,7 +269,9 @@ pub async fn now_playing(ctx: poise::Context<'_, BotData, BotError>) -> Result<(
 #[poise::command(slash_command, guild_only)]
 pub async fn loop_mode(
     ctx: poise::Context<'_, BotData, BotError>,
-    #[description = "Loop mode: off, track, or queue"] mode: String,
+    #[description = "Loop mode: off, track, or queue"]
+    #[autocomplete = "crate::autocomplete::loop_mode"]
+    mode: String,
 ) -> Result<(), BotError> {
     let guild_id = command_guild(ctx)?;
     let parsed = LoopMode::parse(&mode).ok_or_else(|| BotError::InvalidLoopMode(mode.clone()))?;

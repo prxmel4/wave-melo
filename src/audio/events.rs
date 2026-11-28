@@ -28,7 +28,7 @@ pub fn on_ready(_client: LavalinkClient, session_id: String, event: &Ready) -> H
 
 /// A track started playing on the Lavalink node.
 pub fn on_track_start(
-    _client: LavalinkClient,
+    client: LavalinkClient,
     _session_id: String,
     event: &TrackStart,
 ) -> HandlerFuture {
@@ -41,6 +41,12 @@ pub fn on_track_start(
             title = %title,
             "track started"
         );
+        if let Ok(registry) = client.data::<GuildStateRegistry>() {
+            let session = registry.session(guild_id);
+            let mut details = session.details.lock().await;
+            details.remember_track(title);
+            details.idle_generation = details.idle_generation.wrapping_add(1);
+        }
     })
 }
 

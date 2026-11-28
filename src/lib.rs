@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod autocomplete;
 pub mod bot;
 pub mod commands;
 pub mod config;

@@ -139,13 +139,15 @@ cargo run
 | `/seek <position>` | Seek to `90`, `01:30`, or `00:01:30` seconds |
 | `/nowplaying` | Show track, position, volume, loop, filter, and status |
 | `/loop <off\|track\|queue>` | Set repeat mode for this guild |
-| `/loop <off\|track\|queue>` | Set repeat mode for this guild |
 | `/queue` | Show the current track and the next queued tracks |
 | `/join` | Join your current voice channel |
 | `/leave` | Leave voice and clear the queue |
 
 All bot-controlled replies and embeds are in English. Track titles, artist
 names, lyrics, and user-supplied queries keep their original language.
+
+`/loop` offers built-in autocomplete. `/play` suggests up to five recently
+played titles without contacting external services.
 
 ## Development
 
