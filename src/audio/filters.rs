@@ -143,4 +143,60 @@ mod tests {
             assert!((-0.25..=1.0).contains(&band.gain));
         }
     }
+
+    #[test]
+    fn nightcore_speeds_up_and_raises_pitch() {
+        let (_, filters) = resolve("nightcore").unwrap();
+        let timescale = filters.timescale.unwrap();
+        assert_eq!(timescale.speed, Some(1.25));
+        assert_eq!(timescale.pitch, Some(1.25));
+        assert_eq!(timescale.rate, Some(1.0));
+        assert!(filters.equalizer.is_none());
+        assert!(filters.rotation.is_none());
+    }
+
+    #[test]
+    fn vaporwave_slows_down_with_gentle_rotation() {
+        let (_, filters) = resolve("vaporwave").unwrap();
+        let timescale = filters.timescale.unwrap();
+        assert_eq!(timescale.speed, Some(0.82));
+        assert_eq!(timescale.pitch, Some(0.82));
+        assert_eq!(timescale.rate, Some(1.0));
+        assert_eq!(filters.rotation.unwrap().rotation_hz, Some(0.1));
+        assert!(filters.karaoke.is_none());
+    }
+
+    #[test]
+    fn eight_d_rotates_without_touching_timescale() {
+        let (_, filters) = resolve("8d").unwrap();
+        assert_eq!(filters.rotation.unwrap().rotation_hz, Some(0.2));
+        assert!(filters.timescale.is_none());
+        assert!(filters.equalizer.is_none());
+    }
+
+    #[test]
+    fn karaoke_targets_the_standard_vocal_band() {
+        let (_, filters) = resolve("karaoke").unwrap();
+        let karaoke = filters.karaoke.unwrap();
+        assert_eq!(karaoke.level, Some(1.0));
+        assert_eq!(karaoke.mono_level, Some(1.0));
+        assert_eq!(karaoke.filter_band, Some(220.0));
+        assert_eq!(karaoke.filter_width, Some(100.0));
+        assert!(filters.timescale.is_none());
+    }
+
+    #[test]
+    fn every_preset_replaces_the_full_filter_set() {
+        // Lavalink replaces the entire filter set on update, so each preset
+        // must be a complete value and `clear` must serialize to `{}`.
+        for name in PRESETS {
+            let (_, filters) = resolve(name).unwrap();
+            let value = serde_json::to_value(&filters).unwrap();
+            assert!(value.is_object(), "preset {name} is not an object");
+        }
+        assert_eq!(
+            serde_json::to_value(clear()).unwrap(),
+            serde_json::json!({})
+        );
+    }
 }
