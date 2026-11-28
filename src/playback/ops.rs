@@ -108,6 +108,34 @@ pub async fn set_paused(data: &BotData, guild_id: GuildId, paused: bool) -> Resu
     Ok(true)
 }
 
+/// Resolve a user-facing seek string against the current track metadata.
+pub fn resolve_seek_input(
+    input: &str,
+    is_seekable: bool,
+    is_stream: bool,
+    length_ms: u64,
+) -> Result<u64, BotError> {
+    let target = crate::playback::seek::parse_seek(input)
+        .map_err(|error| BotError::InvalidSeek(format!("{error:?}")))?;
+    crate::playback::seek::validate_seek_target(target, is_seekable, is_stream, length_ms)
+        .map_err(|error| BotError::InvalidSeek(format!("{error:?}")))
+}
+
+/// Seek the active player to a previously validated millisecond offset.
+pub async fn seek_to(data: &BotData, guild_id: GuildId, target_ms: u64) -> Result<u64, BotError> {
+    let player_ctx = require_player(data, guild_id)?;
+    let updated = player_ctx
+        .set_position(std::time::Duration::from_millis(target_ms))
+        .await
+        .map_err(|error| BotError::Lavalink(error.to_string()))?;
+    tracing::info!(
+        guild_id = %guild_id,
+        position_ms = updated.state.position,
+        "seek applied"
+    );
+    Ok(updated.state.position)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_volume, validate_volume, BotError, MAX_VOLUME, MIN_VOLUME};

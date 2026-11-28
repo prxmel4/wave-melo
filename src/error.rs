@@ -11,6 +11,8 @@ pub enum BotError {
     Logging(String),
     #[error("Discord API error")]
     Discord(Box<serenity::Error>),
+    #[error("invalid seek position: {0}")]
+    InvalidSeek(String),
     #[error("invalid volume: {0}")]
     InvalidVolume(String),
     #[error("no active player in this guild")]
@@ -52,6 +54,9 @@ impl BotError {
             }
             Self::Track(_) => "Playback failed. Please try again.",
             Self::InvalidVolume(_) => "Volume must be between 0 and 150.",
+            Self::InvalidSeek(_) => {
+                "That position is invalid or outside this track. Use a value like 90 or 01:30."
+            }
             Self::NoActivePlayer => "No active player here. Use /play first.",
             Self::InvalidQuery(_) => "The link or search query is invalid.",
             Self::NotInVoice => "You must join a voice channel before using this command.",

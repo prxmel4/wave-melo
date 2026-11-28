@@ -7,6 +7,7 @@ use crate::error::BotError;
 use crate::playback::ops::{require_same_voice, set_paused, set_volume};
 use crate::state::BotData;
 use crate::ui::embeds;
+use crate::ui::now_playing::{self, NowPlayingView};
 
 fn command_guild(ctx: poise::Context<'_, BotData, BotError>) -> Result<GuildId, BotError> {
     ctx.guild_id()
@@ -167,6 +168,85 @@ pub async fn resume(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), Bo
         ("Already playing", "The player is not paused.")
     };
     ctx.send(CreateReply::default().embed(embeds::info(title, description)))
+        .await?;
+    Ok(())
+}
+
+/// Seek to an absolute position in the current track.
+#[poise::command(slash_command, guild_only)]
+pub async fn seek(
+    ctx: poise::Context<'_, BotData, BotError>,
+    #[description = "Position as 90, 01:30, or 00:01:30"] position: String,
+) -> Result<(), BotError> {
+    let guild_id = command_guild(ctx)?;
+    require_same_voice(
+        ctx.cache(),
+        guild_id,
+        ctx.author().id,
+        ctx.cache().current_user().id,
+    )?;
+
+    let data = ctx.data();
+    let lock = data.guild_lock(guild_id).await;
+    let _guard = lock.lock().await;
+    let player_ctx = crate::playback::ops::require_player(data, guild_id)?;
+    let player = player_ctx
+        .get_player()
+        .await
+        .map_err(|error| BotError::Lavalink(error.to_string()))?;
+    let track = player.track.ok_or(BotError::NoActivePlayer)?;
+    let target = crate::playback::ops::resolve_seek_input(
+        &position,
+        track.info.is_seekable,
+        track.info.is_stream,
+        track.info.length,
+    )?;
+    let applied = crate::playback::ops::seek_to(data, guild_id, target).await?;
+    drop(_guard);
+
+    ctx.send(CreateReply::default().embed(embeds::success(
+        "Position updated",
+        format!("Seeked to {}", crate::utils::format_duration_ms(applied)),
+    )))
+    .await?;
+    Ok(())
+}
+
+/// Show the current track, playback position, volume, loop mode, and filter.
+#[poise::command(slash_command, guild_only)]
+pub async fn now_playing(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotError> {
+    let guild_id = command_guild(ctx)?;
+    let data = ctx.data();
+    let player_ctx = crate::playback::ops::require_player(data, guild_id)?;
+    let player = player_ctx
+        .get_player()
+        .await
+        .map_err(|error| BotError::Lavalink(error.to_string()))?;
+    let track = player.track.ok_or(BotError::NoActivePlayer)?;
+
+    let requester = track
+        .user_data
+        .as_ref()
+        .and_then(|data| data.get("requester"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("Unknown user")
+        .to_owned();
+    let length_ms = (!track.info.is_stream && track.info.length > 0).then_some(track.info.length);
+    let view = NowPlayingView {
+        title: track.info.title.clone(),
+        url: Some(crate::audio::loader::track_url(&track)),
+        author: track.info.author.clone(),
+        requester,
+        position_ms: player.state.position,
+        length_ms,
+        volume: player.volume,
+        loop_mode: "Off".to_owned(),
+        active_filter: "None".to_owned(),
+        paused: player.paused,
+        connected: player.state.connected,
+    };
+
+    ctx.send(CreateReply::default().embed(now_playing::build(&view)))
         .await?;
     Ok(())
 }

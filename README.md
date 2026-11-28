@@ -136,6 +136,8 @@ cargo run
 | `/volume <0..150>` | Set playback volume (100 = default level) |
 | `/pause` | Pause the current track (same voice channel required) |
 | `/resume` | Resume a paused track (same voice channel required) |
+| `/seek <position>` | Seek to `90`, `01:30`, or `00:01:30` seconds |
+| `/nowplaying` | Show track, position, volume, loop, filter, and status |
 | `/queue` | Show the current track and the next queued tracks |
 | `/join` | Join your current voice channel |
 | `/leave` | Leave voice and clear the queue |
