@@ -2,8 +2,9 @@
 #
 # Sources for keys and defaults:
 #   - Lavalink application.yml.example (lavalink-devs/Lavalink)
-#   - youtube-source plugin README (lavalink-devs/youtube-source)
+#   - youtube-source 1.18.2 plugin README (lavalink-devs/youtube-source)
 #   - LavaSrc README (topi314/LavaSrc)
+#   - yt-cipher README (kikkia/yt-cipher) for remote cipher + timeouts
 #
 # Environment variables take precedence over this file (see
 # https://lavalink.dev/configuration/). docker-compose.yml overrides the
@@ -44,6 +45,11 @@ lavalink:
     playerUpdateInterval: 5
     youtubeSearchEnabled: true
     soundcloudSearchEnabled: true
+    # yt-cipher README: raise HTTP timeouts if remote deciphering is slow.
+    timeouts:
+      connectTimeoutMs: 10000
+      connectionRequestTimeoutMs: 10000
+      socketTimeoutMs: 10000
 
 logging:
   file:
@@ -55,12 +61,23 @@ logging:
 plugins:
   youtube:
     enabled: true
-    # Client order recommended by the youtube-source README.
+    # Zero-OAuth client list. ANDROID_VR/TV were dropped: they can require
+    # sign-in. MUSIC is metadata/search only; the rest support playback.
+    # Identifiers verified against the 1.18.2 README "Available Clients" table.
     clients:
       - MUSIC
-      - ANDROID_VR
       - WEB
+      - MWEB
       - WEBEMBEDDED
+      - TVHTML5_SIMPLY
+    # Self-hosted yt-cipher sidecar solves signature/n-parameter deciphering
+    # ("No supported audio streams available") without any login.
+    # Keys verified against the 1.18.2 README "Using a remote cipher server".
+    # The sidecar is on the internal Compose network and has no API_TOKEN,
+    # so no password is needed. See docker-compose.yml for the service.
+    remoteCipher:
+      url: "http://yt-cipher:8001/"
+      userAgent: "wavemelo"
 
   lavasrc:
     providers:

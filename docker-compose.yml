@@ -1,8 +1,33 @@
 services:
+  yt-cipher:
+    # No published image tag could be verified upstream, so build from a
+    # pinned commit of the project's own root Dockerfile (Compose git context).
+    # Active project: https://github.com/kikkia/yt-cipher (commit 91d55a2).
+    # API_TOKEN is intentionally unset: the service is internal-only and the
+    # youtube-source remoteCipher config then needs no password.
+    build:
+      context: https://github.com/kikkia/yt-cipher.git#91d55a24fafd83fa85f72dfe6914626b05f799f6
+      dockerfile: Dockerfile
+    container_name: wavemelo-yt-cipher
+    restart: unless-stopped
+    environment:
+      # Source-confirmed variable (README's OVERRIDE_SCRIPT_VARIANT does not
+      # exist in code); upstream compose uses IAS.
+      OVERRIDE_PLAYER_VARIANT: "IAS"
+      PORT: "8001"
+      HOST: "0.0.0.0"
+    # No host port publish: only Lavalink reaches this service, over the
+    # internal bridge network.
+    networks:
+      - wavemelo
+
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4.2.2
     container_name: wavemelo-lavalink
     restart: unless-stopped
+    depends_on:
+      yt-cipher:
+        condition: service_started
     environment:
       # Documented Lavalink env override; takes precedence over application.yml.
       LAVALINK_SERVER_PASSWORD: ${LAVALINK_PASSWORD:?set LAVALINK_PASSWORD in .env}

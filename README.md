@@ -5,6 +5,9 @@ a **Lavalink v4** node (with **LavaSrc** and the **youtube-plugin**), so the
 bot itself only speaks the Lavalink and Discord gateway protocols — no local
 yt-dlp, no Opus decoding, and no separate audio process inside the bot.
 
+YouTube playback works **without a Google OAuth login**: a self-hosted
+`yt-cipher` sidecar handles signature/n-parameter deciphering for the plugin.
+
 ## Features
 
 - Slash commands via Poise with ephemeral, safe error replies
@@ -16,6 +19,7 @@ yt-dlp, no Opus decoding, and no separate audio process inside the bot.
 - JSON structured logs through `RUST_LOG`
 - Graceful shutdown on SIGINT/SIGTERM
 - Docker Compose deployment with a health-checked Lavalink node
+- Zero-OAuth YouTube playback via a private `yt-cipher` sidecar
 
 ## Architecture
 
@@ -25,9 +29,11 @@ Discord Gateway ──► serenity (poise)
    │ voice state/server   │ slash commands
    ▼                      ▼
 lavalink-rs ──► Lavalink v4 node ──► Discord voice servers
-                    │
-                    ├── youtube-plugin (YouTube / YouTube Music)
-                    └── LavaSrc (Spotify, Apple Music, Deezer… off by default)
+                     │        │
+                     │        └── yt-cipher (internal sidecar: deciphers
+                     │            YouTube signature / n-parameter)
+                     ├── youtube-plugin (YouTube / YouTube Music)
+                     └── LavaSrc (Spotify, Apple Music, Deezer… off by default)
 ```
 
 - The bot forwards `VOICE_STATE_UPDATE` / `VOICE_SERVER_UPDATE` gateway
@@ -37,10 +43,31 @@ lavalink-rs ──► Lavalink v4 node ──► Discord voice servers
 - `/stop` clears the queue and stops the track while staying connected;
   `/leave` deletes the player and disconnects.
 
+## Zero-OAuth YouTube playback
+
+The `youtube-plugin` 1.18.2 clients `ANDROID_VR` and `TV` can demand a Google
+sign-in ("This video requires login"), while `WEB`/`WEBEMBEDDED` can fail with
+"No supported audio streams available" when YouTube rotates its player
+scripts and signature/n-parameter cipher.
+
+wavemelo avoids account login entirely:
+
+1. `lavalink/application.yml` lists only non-OAuth playback clients
+   (`WEB`, `MWEB`, `WEBEMBEDDED`, `TVHTML5_SIMPLY`) plus `MUSIC` for search.
+2. A private `yt-cipher` service runs on the internal Docker network. Lavalink
+   calls it through the documented `plugins.youtube.remoteCipher` config, so
+   deciphering happens locally — no Google account, no public API.
+
+The older PoToken generator suggested in plugin docs
+(`iv-org/youtube-trusted-session-generator`) is **archived/deprecated** and has
+no maintained image; wavemelo does not depend on it.
+
 ## Prerequisites
 
 - Rust `1.100.0` with `rustfmt` and `clippy` (pinned in `rust-toolchain.toml`)
 - A running **Lavalink v4.2.2** node (`docker compose up` provides one)
+- Docker with Compose v2 and network access on first build (the pinned
+  `yt-cipher` image is built from its upstream Git repository)
 - A Discord bot application with:
   - `bot` and `applications.commands` OAuth2 scopes
   - `Connect` and `Speak` voice permissions
@@ -75,12 +102,16 @@ docker compose up --build -d
 docker compose logs -f bot
 ```
 
-Compose runs two services on an internal network: `lavalink` (the audio node,
-health-checked via a TCP probe on port 2333) and `bot` (this application).
+Compose runs three services on an internal network:
+
+- `yt-cipher` — built from pinned upstream commit `91d55a2`, listens on 8001
+  **inside the network only** (no host port), no API token needed.
+- `lavalink` — the audio node, health-checked via a TCP probe on port 2333,
+  depending on `yt-cipher`; uses `LAVALINK_SERVER_PASSWORD` env override.
+- `bot` — this application, starting only after Lavalink is healthy.
+
 The node's port is published on host loopback only (`127.0.0.1:2333`) so a
-local `cargo run` can reach it; it is never exposed to the LAN. The node
-password is injected via the documented `LAVALINK_SERVER_PASSWORD`
-environment override.
+local `cargo run` can reach it; it is never exposed to the LAN.
 
 Plugin jars download into the container on first start and re-download if the
 container is re-created. Extra sources (Spotify, Deezer, …) are disabled by
@@ -90,7 +121,7 @@ README once you have credentials.
 ### Local development
 
 ```sh
-docker compose up lavalink -d
+docker compose up lavalink -d   # also starts yt-cipher as a dependency
 cargo run
 ```
 
@@ -99,12 +130,12 @@ cargo run
 | Command | Description |
 | --- | --- |
 | `/ping` | Gateway and HTTP latency check |
-| `/join` | Join your current voice channel |
-| `/leave` | Leave voice and clear the queue |
 | `/play <query>` | Play a URL or search YouTube; queues when busy |
 | `/skip` | Skip the current track |
 | `/stop` | Stop playback and clear the queue (stays connected) |
 | `/queue` | Show the current track and the next queued tracks |
+| `/join` | Join your current voice channel |
+| `/leave` | Leave voice and clear the queue |
 
 All replies are in Thai.
 
@@ -119,6 +150,7 @@ cargo test
 cargo build --release
 ```
 
-- Lavalink config lives in `lavalink/application.yml` (plugins, sources);
-  the password is overridden via environment in `docker-compose.yml`.
+- Lavalink config lives in `lavalink/application.yml` (plugins, sources,
+  remote cipher, timeout tuning); the password is overridden via environment
+  in `docker-compose.yml`.
 - Release verification notes are collected in `docs/RELEASE.md`.
