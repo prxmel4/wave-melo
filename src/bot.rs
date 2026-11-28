@@ -5,8 +5,9 @@ use serenity::client::FullEvent;
 use serenity::gateway::ActivityData;
 use serenity::model::gateway::GatewayIntents;
 use serenity::model::user::OnlineStatus;
-use songbird::SerenityInit;
 
+use crate::audio::client::build_lavalink_client;
+use crate::audio::events::handle_voice_event;
 use crate::config::AppConfig;
 use crate::error::BotError;
 use crate::state::BotData;
@@ -21,31 +22,34 @@ pub fn framework_options() -> poise::FrameworkOptions<BotData, BotError> {
     }
 }
 
-/// Minimal intents required for slash commands and Songbird voice state tracking.
+/// Minimal intents required for slash commands and voice state tracking.
 pub fn gateway_intents() -> GatewayIntents {
     GatewayIntents::GUILDS | GatewayIntents::GUILD_VOICE_STATES
 }
 
-/// Create the shared Songbird manager used by the Serenity client.
-pub fn voice_manager() -> Arc<songbird::Songbird> {
-    songbird::Songbird::serenity()
-}
-
-/// Log safe startup diagnostics when the gateway becomes ready.
+/// Handle gateway events: log readiness and forward voice events to lavalink-rs.
 pub async fn event_handler(
     framework: FrameworkContext<'_, BotData, BotError>,
     event: &FullEvent,
 ) -> Result<(), BotError> {
-    if let FullEvent::Ready { data_about_bot } = event {
-        framework
-            .serenity_context
-            .set_presence(Some(ActivityData::listening("/play")), OnlineStatus::Online);
-        tracing::info!(
-            bot_user = %data_about_bot.user.tag(),
-            guild_count = data_about_bot.guilds.len(),
-            shard_id = %framework.serenity_context.shard_id,
-            "wavemelo ready"
-        );
+    let data = framework.user_data;
+
+    match event {
+        FullEvent::Ready { data_about_bot } => {
+            framework
+                .serenity_context
+                .set_presence(Some(ActivityData::listening("/play")), OnlineStatus::Online);
+            tracing::info!(
+                bot_user = %data_about_bot.user.tag(),
+                guild_count = data_about_bot.guilds.len(),
+                shard_id = %framework.serenity_context.shard_id,
+                "wavemelo ready"
+            );
+        }
+        FullEvent::VoiceStateUpdate { .. } | FullEvent::VoiceServerUpdate { .. } => {
+            handle_voice_event(event, data, framework.bot_id()).await;
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -91,8 +95,27 @@ pub async fn on_error(error: FrameworkError<'_, BotData, BotError>) {
     }
 }
 
-/// Construct a Serenity client with Poise and Songbird registered.
-pub async fn build_client(config: &AppConfig, data: BotData) -> Result<serenity::Client, BotError> {
+/// Construct a Serenity client with Poise registered.
+pub async fn build_client(config: &AppConfig) -> Result<serenity::Client, BotError> {
+    // Fetch the bot's user ID via a temporary HTTP client.
+    let http = serenity::http::Http::new(&config.discord_token);
+    let current_user = http
+        .get_current_user()
+        .await
+        .map_err(|e| BotError::Discord(Box::new(e)))?;
+    let user_id = current_user.id.get();
+
+    tracing::info!(user_id = user_id, "fetched bot user ID");
+
+    // Build the Lavalink client.
+    let lavalink = build_lavalink_client(config, user_id).await?;
+
+    let data = BotData {
+        config: Arc::new(config.clone()),
+        lavalink,
+        guild_ops: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+    };
+
     let setup_data = data.clone();
     let setup_guild_id = config.discord_guild_id;
     let framework = poise::Framework::builder()
@@ -143,7 +166,6 @@ pub async fn build_client(config: &AppConfig, data: BotData) -> Result<serenity:
 
     let client =
         serenity::client::ClientBuilder::new(config.discord_token.clone(), gateway_intents())
-            .register_songbird_with(data.voice.clone())
             .framework(framework)
             .await?;
     Ok(client)

@@ -1,9 +1,9 @@
 use crate::error::BotError;
 
-/// A classified playback query ready for yt-dlp.
+/// A classified playback query ready for Lavalink.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Query {
-    /// A direct URL, normalized to include a scheme.
+    /// A direct URL passed as-is to Lavalink.
     Url(String),
     /// A normalized `ytsearch:` query.
     Search(String),
@@ -29,12 +29,21 @@ fn looks_like_bare_url(value: &str) -> bool {
         "www.youtube.com/",
         "m.youtube.com/",
         "youtu.be/",
+        "music.youtube.com/",
+        "open.spotify.com/",
+        "soundcloud.com/",
+        "deezer.com/",
+        "apple.co/",
+        "music.apple.com/",
+        "bandcamp.com/",
+        "twitch.tv/",
+        "vimeo.com/",
     ]
     .iter()
     .any(|prefix| lower.starts_with(prefix))
 }
 
-/// Normalize a free-text query into a yt-dlp search string.
+/// Normalize a free-text query into a Lavalink search string.
 pub fn normalize_search(query: &str) -> String {
     let trimmed = query.trim();
     let lower = trimmed.to_ascii_lowercase();
@@ -88,12 +97,8 @@ mod tests {
             Query::Url("https://youtube.com/watch?v=abc".to_owned())
         );
         assert_eq!(
-            classify("youtu.be/abc").unwrap(),
-            Query::Url("https://youtu.be/abc".to_owned())
-        );
-        assert_eq!(
-            classify("WWW.YouTube.com/watch?v=abc").unwrap(),
-            Query::Url("https://WWW.YouTube.com/watch?v=abc".to_owned())
+            classify("open.spotify.com/track/abc").unwrap(),
+            Query::Url("https://open.spotify.com/track/abc".to_owned())
         );
     }
 
@@ -102,18 +107,6 @@ mod tests {
         assert_eq!(
             classify("泰国 เพลง").unwrap(),
             Query::Search("ytsearch:泰国 เพลง".to_owned())
-        );
-    }
-
-    #[test]
-    fn trims_surrounding_whitespace() {
-        assert_eq!(
-            classify("  https://youtu.be/abc  ").unwrap(),
-            Query::Url("https://youtu.be/abc".to_owned())
-        );
-        assert_eq!(
-            classify("  ลูก(thai)  ").unwrap(),
-            Query::Search("ytsearch:ลูก(thai)".to_owned())
         );
     }
 

@@ -15,11 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install audio build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes build-essential pkg-config libopus-dev
-
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@1.100.0
         with:
@@ -41,3 +36,14 @@ jobs:
 
       - name: Test
         run: cargo test --locked
+
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker compose config
+        env:
+          DISCORD_TOKEN: ci-placeholder
+          LAVALINK_PASSWORD: ci-placeholder
+        run: docker compose config --quiet

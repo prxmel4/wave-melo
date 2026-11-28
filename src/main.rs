@@ -1,18 +1,20 @@
 use wavemelo::bot;
 use wavemelo::config::AppConfig;
 use wavemelo::error::BotError;
-use wavemelo::state::BotData;
-
-// Songbird needs Symphonia's registry to register the enabled audio codecs.
-use symphonia as _;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), BotError> {
     let config = AppConfig::load()?;
     wavemelo::logging::init_logging()?;
 
-    let data = BotData::new(config)?;
-    let mut client = bot::build_client(&data.config, data.clone()).await?;
+    tracing::info!(
+        lavalink_host = %config.lavalink_host,
+        lavalink_port = config.lavalink_port,
+        lavalink_secure = config.lavalink_secure,
+        "starting wavemelo with Lavalink backend"
+    );
+
+    let mut client = bot::build_client(&config).await?;
     let shard_manager = client.shard_manager.clone();
 
     tokio::select! {

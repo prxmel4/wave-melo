@@ -1,6 +1,6 @@
 # Release verification
 
-Recorded 2026-11-27 for `wavemelo` v0.1.0 after the latency optimization sprint.
+Recorded 2026-11-28 for `wavemelo` v0.2.0 after the Lavalink v4 migration.
 
 ## Toolchain and platform
 
@@ -9,116 +9,161 @@ Recorded 2026-11-27 for `wavemelo` v0.1.0 after the latency optimization sprint.
 - Pinned by `rust-toolchain.toml`
 - Build/test platform: Windows 11 Enterprise 10.0.26200, AMD Ryzen 5 7600 (12 logical cores), 30.88 GB RAM
 - Target artifact: `target/release/wavemelo.exe` (Windows x86_64)
-- CMake was detected at `C:\Program Files\CMake\bin\cmake.exe` and added to PATH only for the command invocations.
 
-## Optimization summary
+## Migration summary
 
-- `/play` defers the interaction before any voice, cache, or extractor work.
-- Voice connection and metadata resolution now run concurrently with `tokio::join!` when a join is required, with explicit cleanup if resolution fails after a successful join.
-- An existing voice connection is reused only when it is already in the author's channel; otherwise Songbird moves the call.
-- A bounded process-local metadata cache skips redundant `yt-dlp` metadata probes.
-- Concurrent requests for the same key are coalesced (singleflight), including a short-lived failure coalescing window.
-- Next-track prefetching is limited to one task per guild and two concurrent extractions globally; foreground extraction is limited to four concurrent permits.
-- Queue mutations, manual skips, stops, disconnects, and guild removals cancel or invalidate obsolete prefetch work.
-- Playback generations prevent stale `End`/`Error` events from advancing the queue twice.
-- Structured `tracing` summaries now record command, guild, cache hit, prefetch hit, voice reuse, join/resolve/reply/playback timing, total wall-clock time, and outcome. Detailed extractor invocations are logged at `DEBUG`.
+wavemelo was migrated from a local audio pipeline (Songbird 0.6.1 + Symphonia +
+yt-dlp subprocess) to a **Lavalink v4** backend:
+
+- **lavalink-rs 0.15.0** — Lavalink v4 client with built-in queue, voice
+  handshake accumulation, and per-guild player contexts.
+- **Lavalink 4.2.2** — Java audio node via `ghcr.io/lavalink-devs/lavalink:4.2.2`.
+- **youtube-plugin 1.18.2** — Replaces the deprecated built-in YouTube source
+  (verified via Maven POM at `maven.lavalink.dev`).
+- **LavaSrc 4.8.3** — Optional Spotify, Apple Music, Deezer, Yandex Music,
+  VK Music, Tidal, Qobuz, and yt-dlp sources (all off by default; verified
+  via Maven POM at `maven.lavalink.dev`).
+- **Docker Compose** — Two-service deployment (`lavalink` + `bot`) with a
+  TCP health check and an internal bridge network.
+
+### What was removed
+
+- Songbird 0.6.1 and all voice manager code.
+- Symphonia / Opus decoding dependencies (no longer in `Cargo.lock`).
+- yt-dlp subprocess invocation, metadata cache, prefetch system, and
+  singleflight coalescing.
+- `src/audio/source.rs`, `src/audio/cache.rs`, `src/audio/prefetch.rs`,
+  `src/audio/queue.rs`, `src/audio/metadata.rs`.
+- `src/ui/colors.rs` (consolidated into `src/ui/embeds.rs`).
+- `src/utils/` directory (consolidated into `src/utils.rs`).
+
+### What was added
+
+- `src/audio/client.rs` — Lavalink client construction with event registration.
+- `src/audio/loader.rs` — Track resolution via Lavalink's REST API.
+- `src/audio/events.rs` — Lavalink event handlers and Discord voice event
+  forwarding with bot-only forced-disconnect cleanup.
+- `lavalink/application.yml` — Lavalink v4 configuration with plugin
+  declarations and the youtube-source recommended client list.
+- `Dockerfile` — Multi-stage build (`rust:1.100-slim-bookworm` →
+  `debian:bookworm-slim`), explicit gcc/libc6-dev for `ring`, non-root
+  runtime user.
+- `docker-compose.yml` — Service orchestration with a TCP health check,
+  loopback-only port publish, and `LAVALINK_SERVER_PASSWORD` env override.
+- `.dockerignore` — Minimal build context (Cargo manifests + src/).
 
 ## Architecture changes
 
-- `src/audio/cache.rs`: 128-entry LRU metadata cache with 20-minute TTL, `std::time::Instant` freshness, singleflight resolution, and short-lived failure coalescing.
-- `src/audio/prefetch.rs`: bounded speculative resolution of only the next queued track, with version-based invalidation and cancellation.
-- `src/audio/source.rs`: cache-aware metadata resolution, lazy input construction, bounded metadata strings, and safe subprocess argument assembly.
-- `src/state.rs`: per-guild operation locks, playback generations, queue versions, extraction semaphores, prefetch task registry, and guild state cleanup.
-- `src/audio/queue.rs`: versioned queue mutations and prefetch invalidation.
-- `src/audio/events.rs`: generation-guarded transitions with telemetry and prefetch reuse.
-- `src/commands/play.rs`, `src/commands/playback.rs`, `src/commands/voice.rs`: concurrent resolution, safe skip/stop/leave transitions, and command telemetry.
+```
+Before (v0.1.0):                     After (v0.2.0):
+serenity + Songbird                  serenity (no voice feature)
+    │                                     │
+    ├── yt-dlp subprocess                 │ voice events
+    ├── Symphonia decoder                 ▼
+    └── Opus encoder               lavalink-rs ──► Lavalink v4
+                                              │
+                                              ├── youtube-plugin
+                                              └── LavaSrc (off by default)
+```
 
-### Cache and concurrency limits
-
-| Limit | Value |
-| --- | --- |
-| Metadata cache capacity | 128 entries |
-| Metadata TTL | 20 minutes |
-| Foreground extractions | 4 concurrent |
-| Prefetch extractions | 2 concurrent globally |
-| Prefetch tasks | 1 per guild |
-| Cached payloads | Metadata only; no audio buffers or media files |
+- Voice state and server update events are forwarded from serenity's gateway
+  to lavalink-rs, which assembles connection info and sends it to Lavalink.
+- Lavalink handles all audio: YouTube resolution, decoding, Opus encoding,
+  and Discord voice server communication.
+- The bot binary went from ~14.55 MiB (with Opus + Symphonia) to
+  **9.79 MiB** (no local audio dependencies).
+- The process no longer requires `yt-dlp` on PATH or audio build
+  dependencies (`libopus-dev`, `pkg-config`).
 
 ## Quality gates
 
-All checks passed locally:
+All checks passed locally on 2026-11-28:
 
 | Command | Status |
 | --- | --- |
-| `cargo fmt --all` | passed |
-| `cargo fmt --all -- --check` | passed |
-| `cargo check --all-targets` | passed |
-| `cargo clippy --all-targets -- -D warnings` | passed |
-| `cargo test` | passed |
-| `cargo build --release` | passed |
+| `cargo fmt --all --check` | passed |
+| `cargo clippy --all-targets --locked -- -D warnings` | passed |
+| `cargo test --locked` | **28 passed**, 0 failed |
+| `cargo build --release --locked` | passed (10,264,064 bytes) |
 
-Passing test count: **64**, 0 failed.
+### Test inventory
 
-## Release artifact
+| Module | Tests | Description |
+| --- | --- | --- |
+| `config` | 14 | Token, guild ID, Lavalink host/port/password/secure validation, boolean parsing, address formatting, debug redaction |
+| `error` | 4 | Display, user messages, detail leakage prevention |
+| `audio::query` | 6 | URL/search classification, scheme normalization, Thai text, edge cases |
+| `utils` | 4 | Duration formatting, Thai-safe truncation |
+| **Total** | **28** | |
 
-- `cargo build --release`: passed
-- `target/release/wavemelo.exe`: **15,251,968 bytes** (**14.55 MiB**)
-- Previous verified size: 15,122,944 bytes (14.43 MiB); increase of 129,024 bytes.
-- Release profile: `opt-level = "z"`, `lto = "thin"`, one codegen unit, no incremental artifacts, stripped symbols.
+The previous 64-test suite included tests in modules removed during
+migration (cache, prefetch, queue, state, source).
 
-## Performance results
+## Configuration
 
-### Measured
-
-| Metric | Sample count | Result | Method |
+| Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| Metadata cache hit lookup | 1,000 | p50 1,000 ns; p95 1,000 ns | `benchmark_cache_hit_latency` in-process test on Windows, debug profile |
-| Single `yt-dlp` metadata probe | 1 before, 3 after | Before: 4,619 ms. After: 4,242 / 4,223 / 4,368 ms (min 4,223, median 4,242, max 4,368) | `yt-dlp --no-playlist --no-warnings -f bestaudio[acodec=opus]/bestaudio/best -j ytsearch1:never gonna give you up`, output discarded |
-| Extractor invocations for a fresh metadata probe | Code-path audit | 1 metadata probe plus 1 fresh stream resolution at playback | Songbird 0.6.1 source inspection; previously 2 metadata/stream probes plus the same playback resolution path |
+| `DISCORD_TOKEN` | yes | — | Bot token |
+| `DISCORD_GUILD_ID` | no | — | Dev guild for instant command registration |
+| `LAVALINK_HOST` | no | `127.0.0.1` | Lavalink hostname (`lavalink` in Compose) |
+| `LAVALINK_PORT` | no | `2333` | Lavalink port |
+| `LAVALINK_PASSWORD` | yes | `youshallnotpass` | Validated as non-empty; Compose injects via `LAVALINK_SERVER_PASSWORD` |
+| `LAVALINK_SECURE` | no | `false` | TLS/WSS |
+| `RUST_LOG` | no | `info,wavemelo=debug` | Log filter |
 
-p95 and p99 for the external `yt-dlp` samples are not reported because three samples are insufficient for meaningful tail estimates.
+Extra sources (Spotify, Deezer, …) are configured directly in
+`lavalink/application.yml` per the LavaSrc README; they are not exposed
+through bot environment variables.
 
-### Not measured
+## Docker deployment
 
-The following targets were not verified end-to-end against Discord in this sprint:
+```sh
+cp .env.example .env   # fill in DISCORD_TOKEN and LAVALINK_PASSWORD
+docker compose up --build -d
+docker compose logs -f bot
+```
 
-- Immediate interaction acknowledgment in a live Discord client.
-- Warm `/play` command processing under 500 ms.
-- `/skip` under 200 ms.
-- Prefetched transition under 300 ms.
-- Natural queue transition gap.
-- Multiple active guilds under bounded extractor concurrency.
-- Peak/steady-state memory and CPU utilization.
-- Voice connection failures and real audio audibility.
-
-No performance improvement percentages are claimed because equivalent end-to-end samples were not collected.
-
-## Benchmark methodology
-
-- Cache benchmark: one pre-populated entry, 1,000 sequential `get_fresh` calls, nanosecond `Instant` sampling, sorted samples with p50/p95 reporting.
-- External extractor benchmark: identical `yt-dlp` command before and after, stdout/stderr discarded, wall-clock milliseconds recorded.
-- Environment: local Windows host described above. This is not representative of a 1-vCPU, 512 MB–1 GB VPS.
-- Reproduce with:
-
-  ```sh
-  cargo test audio::cache::tests::benchmark_cache_hit_latency -- --nocapture
-  ```
-
-## New and updated tests
-
-- Cache hit/miss, TTL expiry, strict capacity, deterministic LRU eviction, replacement, Thai/Unicode keys, concurrent singleflight, transient failure coalescing, and nanosecond cache-hit benchmark.
-- Prefetch hit consumption, queue mutation invalidation, expired prefetch rejection, and task cancellation cleanup.
-- Guild generation invalidation, per-guild lock serialization, extraction permit bounds, and guild state cleanup.
-- Existing query, config, error, UI, text, and duration tests remain green.
+- `lavalink` service: health-checked via a bash `/dev/tcp` TCP probe on
+  port 2333 (the base image has no `curl`/`wget`). Port is published on
+  **host loopback only** (`127.0.0.1:2333`) for local `cargo run` use;
+  remove for remote-only deployments.
+- `bot` service: depends on healthy `lavalink`, runs as a non-root user,
+  minimal Debian runtime with CA certificates only.
+- Plugin jars download into the container layer on first start and
+  re-download if the container is re-created. No named volumes are used
+  because the image runs as uid 322 and a fresh named volume would be
+  root-owned, breaking plugin downloads.
+- The node password is overridden via the documented
+  `LAVALINK_SERVER_PASSWORD` environment variable (Spring Boot env
+  override that takes precedence over `application.yml`).
 
 ## Known limitations
 
-- Songbird 0.6.1 prepends `user_args` before its own `-f ba[abr>0][vcodec=none]/best --no-playlist` arguments. The requested `bestaudio[acodec=opus]/bestaudio/best` flag is passed, but Songbird's later format flag wins. Changing this safely requires replacing `YoutubeDl` with a pre-resolved `HttpRequest` source and replicating headers/cookies, which risks stream freshness and authentication correctness.
-- Songbird's lazy `YoutubeDl` source does not cache resolved stream URLs; playback still performs one fresh extractor invocation. The cache stores only stable metadata, so signed or ephemeral media URLs are never treated as valid for the 20-minute metadata TTL.
-- Playlist support remains intentionally disabled, matching the pre-existing Songbird behavior.
-- Live Discord gateway, voice handshake, actual audio output, and command latency were not exercised locally during this sprint.
-- DAVE/E2EE encrypted voice remains unsupported by Songbird 0.6.1.
+- Spotify, Apple Music, Deezer, and other LavaSrc sources require manual
+  configuration in `lavalink/application.yml` and valid credentials; none
+  are wired through the bot's environment.
+- Live Discord gateway, voice handshake, and actual audio output were not
+  exercised locally during this migration (no Docker daemon available in
+  the build environment); the first live deployment should be monitored
+  for voice connection and track loading issues.
+- The health check uses a TCP probe rather than the `/version` HTTP
+  endpoint because the base image lacks HTTP client tools.
+
+## v0.1.0 release notes (archived)
+
+<details>
+<summary>Previous release verification (2026-11-27)</summary>
+
+- 64 tests passing.
+- `target/release/wavemelo.exe`: 15,251,968 bytes (14.55 MiB).
+- Local audio pipeline with Songbird 0.6.1, yt-dlp metadata cache, prefetch,
+  and singleflight coalescing.
+- Cache hit p50 1 μs, p95 1 μs.
+- External yt-dlp metadata probe: ~4.2 seconds.
+</details>
 
 ## Release readiness
 
-The verified release is suitable for deployment provided external `yt-dlp` behavior is acceptable on the target host. Latency targets that depend on Discord voice handshakes or YouTube upstream remain unverified and should be validated with live telemetry after deployment.
+The verified release is suitable for deployment with a running Lavalink v4
+node. Latency targets that depend on Discord voice handshakes or YouTube
+upstream remain unverified and should be validated with live telemetry.

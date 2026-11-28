@@ -1,14 +1,18 @@
 [package]
 name = "wavemelo"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 
 [dependencies]
-async-trait = "0.1"
 dotenvy = "0.15"
+lavalink-rs = { version = "0.15.0", default-features = false, features = [
+    "macros",
+    "serenity",
+    "tungstenite-rustls-native-roots",
+] }
 poise = { version = "0.7.1", default-features = false, features = ["cache", "handle_panics"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+serde_json = "1"
 serenity = { version = "0.12.5", default-features = false, features = [
     "builder",
     "cache",
@@ -18,26 +22,6 @@ serenity = { version = "0.12.5", default-features = false, features = [
     "model",
     "rustls_backend",
     "utils",
-    "voice",
-] }
-songbird = { version = "0.6.1", default-features = false, features = [
-    "builtin-queue",
-    "driver",
-    "gateway",
-    "rustls",
-    "serenity",
-    "tungstenite",
-] }
-symphonia = { version = "0.5.2", default-features = false, features = [
-    "aac",
-    "flac",
-    "isomp4",
-    "mkv",
-    "mp3",
-    "ogg",
-    "pcm",
-    "vorbis",
-    "wav",
 ] }
 thiserror = "2"
 tokio = { version = "1", default-features = false, features = [
@@ -47,6 +31,7 @@ tokio = { version = "1", default-features = false, features = [
     "sync",
     "time",
 ] }
+tokio-tungstenite = { version = "0.21", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = [
     "env-filter",
@@ -55,10 +40,6 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "registry",
     "std",
 ] }
-unicode-segmentation = "1"
-
-[dev-dependencies]
-serde_json = "1"
 
 [profile.release]
 opt-level = "z"

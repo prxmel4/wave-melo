@@ -1,87 +1,124 @@
 # wavemelo
 
-Ultra-lightweight Discord music bot written in Rust. No Lavalink, no separate server process: Songbird handles voice, and `yt-dlp` resolves YouTube URLs and searches.
+Ultra-lightweight Discord music bot written in Rust. Audio is streamed through
+a **Lavalink v4** node (with **LavaSrc** and the **youtube-plugin**), so the
+bot itself only speaks the Lavalink and Discord gateway protocols — no local
+yt-dlp, no Opus decoding, and no separate audio process inside the bot.
 
 ## Features
 
 - Slash commands via Poise with ephemeral, safe error replies
-- In-memory per-guild queues; no database required
+- `/ping`, `/join`, `/leave`, `/play`, `/skip`, `/stop`, `/queue`
 - URL or YouTube search input, including Thai text
-- UTF-8/Thai-safe truncation and markdown escaping in embeds
-- One reusable `reqwest::Client`, minimal allocations, small release binary
+- Playlists and albums, capped at 200 queued tracks per guild
+- UTF-8/Thai-safe truncation and markdown-safe embeds
+- Per-guild operation locks to serialize playback transitions
 - JSON structured logs through `RUST_LOG`
 - Graceful shutdown on SIGINT/SIGTERM
+- Docker Compose deployment with a health-checked Lavalink node
+
+## Architecture
+
+```
+Discord Gateway ──► serenity (poise)
+   │                      │
+   │ voice state/server   │ slash commands
+   ▼                      ▼
+lavalink-rs ──► Lavalink v4 node ──► Discord voice servers
+                    │
+                    ├── youtube-plugin (YouTube / YouTube Music)
+                    └── LavaSrc (Spotify, Apple Music, Deezer… off by default)
+```
+
+- The bot forwards `VOICE_STATE_UPDATE` / `VOICE_SERVER_UPDATE` gateway
+  events to lavalink-rs, which assembles the voice connection info.
+- `/join` and `/play` create a Lavalink *player context* per guild; the
+  built-in queue auto-advances and stops when empty.
+- `/stop` clears the queue and stops the track while staying connected;
+  `/leave` deletes the player and disconnects.
 
 ## Prerequisites
 
 - Rust `1.100.0` with `rustfmt` and `clippy` (pinned in `rust-toolchain.toml`)
-- `yt-dlp` available on `PATH`, or an explicit path in `YTDLP_BINARY`
+- A running **Lavalink v4.2.2** node (`docker compose up` provides one)
 - A Discord bot application with:
   - `bot` and `applications.commands` OAuth2 scopes
   - `Connect` and `Speak` voice permissions
-  - Gateway intents: Server Guilds and Guild Voice States (no privileged Message Content intent)
-- On Debian/Ubuntu, install audio build dependencies:
-
-  ```sh
-  sudo apt-get update
-  sudo apt-get install --yes build-essential pkg-config libopus-dev
-  ```
+  - Gateway intents: **Server Guilds** and **Guild Voice States**
+    (no privileged Message Content intent)
 
 ## Configuration
 
-```sh
-cp .env.example .env
-# Edit .env and set DISCORD_TOKEN to your real bot token.
-```
+Copy `.env.example` to `.env` and fill in the values:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `DISCORD_TOKEN` | Yes | Discord bot token. Never commit it. |
-| `DISCORD_GUILD_ID` | No | Guild ID for instant slash-command registration during testing. Leave empty to register globally (may take up to an hour). |
-| `YOUTUBE_COOKIES_PATH` | No | Path to a Netscape-format `cookies.txt` for YouTube access from hosting providers. Leave empty to disable. |
-| `YTDLP_BINARY` | No | `yt-dlp` executable name or path. Defaults to `yt-dlp`. |
-| `RUST_LOG` | No | `tracing-subscriber` filter, e.g. `info,wavemelo=debug`. |
+| `DISCORD_TOKEN` | yes | Bot token from the Discord Developer Portal |
+| `DISCORD_GUILD_ID` | no | Dev guild for instant command registration |
+| `LAVALINK_HOST` | no | Node hostname (default `127.0.0.1`; `lavalink` in compose) |
+| `LAVALINK_PORT` | no | Node port (default `2333`) |
+| `LAVALINK_PASSWORD` | no | Node password (default `youshallnotpass`) |
+| `LAVALINK_SECURE` | no | `true` for TLS/WSS connections (default `false`) |
+| `RUST_LOG` | no | Log filter (default `info,wavemelo=debug`) |
 
-Keep `.env` and cookie files outside Git; both patterns are ignored by `.gitignore`.
+Secrets are read at runtime only: `.env` is git-ignored, `AppConfig` redacts
+tokens and passwords in its `Debug` output, and user-facing error messages
+never contain internal details.
 
-## Build and run
+## Running
+
+### Docker Compose (recommended)
 
 ```sh
-cargo build --release
-./target/release/wavemelo
+cp .env.example .env   # fill in DISCORD_TOKEN and LAVALINK_PASSWORD
+docker compose up --build -d
+docker compose logs -f bot
 ```
 
-On Windows, run `target\release\wavemelo.exe`.
+Compose runs two services on an internal network: `lavalink` (the audio node,
+health-checked via a TCP probe on port 2333) and `bot` (this application).
+The node's port is published on host loopback only (`127.0.0.1:2333`) so a
+local `cargo run` can reach it; it is never exposed to the LAN. The node
+password is injected via the documented `LAVALINK_SERVER_PASSWORD`
+environment override.
+
+Plugin jars download into the container on first start and re-download if the
+container is re-created. Extra sources (Spotify, Deezer, …) are disabled by
+default; enable them manually in `lavalink/application.yml` per the LavaSrc
+README once you have credentials.
+
+### Local development
+
+```sh
+docker compose up lavalink -d
+cargo run
+```
 
 ## Commands
 
 | Command | Description |
 | --- | --- |
-| `/ping` | Show gateway and HTTP latency. |
-| `/join` | Join your current voice channel. |
-| `/leave` | Leave voice and clear the guild queue. |
-| `/play <query>` | Play a URL or YouTube search; auto-joins your voice channel and queues if busy. |
-| `/skip` | Stop the current track and advance to the next queued track. |
-| `/stop` | Stop playback and clear the queue, staying in voice. |
-| `/queue` | Show the next queued tracks. |
+| `/ping` | Gateway and HTTP latency check |
+| `/join` | Join your current voice channel |
+| `/leave` | Leave voice and clear the queue |
+| `/play <query>` | Play a URL or search YouTube; queues when busy |
+| `/skip` | Skip the current track |
+| `/stop` | Stop playback and clear the queue (stays connected) |
+| `/queue` | Show the current track and the next queued tracks |
+
+All replies are in Thai.
 
 ## Development
 
-Run all quality gates before committing:
+Quality gates used by CI:
 
 ```sh
 cargo fmt --all
-cargo check --all-targets
 cargo clippy --all-targets -- -D warnings
 cargo test
+cargo build --release
 ```
 
-## Notes
-
-- There is no Lavalink dependency. Audio is decoded by Symphonia and sourced through `yt-dlp`.
-- Songbird 0.6.1 does not expose a usable DAVE/E2EE API, so end-to-end encrypted voice is not supported.
-- Live Discord voice playback requires valid credentials, voice permissions, and a working `yt-dlp` installation; automated checks cover compilation and unit tests only.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+- Lavalink config lives in `lavalink/application.yml` (plugins, sources);
+  the password is overridden via environment in `docker-compose.yml`.
+- Release verification notes are collected in `docs/RELEASE.md`.

@@ -2,8 +2,6 @@ use std::time::Instant;
 
 use poise::CreateReply;
 
-use crate::audio::events::advance_locked;
-use crate::audio::queue::{clear_queue, take_current};
 use crate::error::BotError;
 use crate::state::BotData;
 use crate::ui::embeds;
@@ -18,10 +16,18 @@ pub async fn skip(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
     let data = ctx.data();
 
     let lock = data.guild_lock(guild_id).await;
-    let guard = lock.lock().await;
-    let generation = data.bump_generation(guild_id).await;
-    let advanced = advance_locked(data, guild_id, generation, true, "skip").await?;
-    drop(guard);
+    let _guard = lock.lock().await;
+
+    let player_ctx = data
+        .lavalink
+        .get_player_context(guild_id.get())
+        .ok_or(BotError::QueueEmpty)?;
+
+    // Skip advances to the next track in the built-in queue
+    player_ctx
+        .skip()
+        .map_err(|e| BotError::Track(e.to_string()))?;
+    drop(_guard);
 
     let reply_started = Instant::now();
     ctx.send(CreateReply::default().embed(embeds::success("ข้ามเพลงแล้ว", "กำลังเล่นเพลงถัดไปในคิว")))
@@ -33,7 +39,7 @@ pub async fn skip(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
         guild_id = %guild_id,
         reply_ms = reply_ms.as_millis() as u64,
         total_ms = command_started.elapsed().as_millis() as u64,
-        outcome = if advanced { "advanced" } else { "queue_empty" },
+        outcome = "skipped",
         "skip command completed"
     );
     Ok(())
@@ -49,16 +55,17 @@ pub async fn stop(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
     let data = ctx.data();
 
     let lock = data.guild_lock(guild_id).await;
-    let guard = lock.lock().await;
-    let _generation = data.bump_generation(guild_id).await;
-    clear_queue(data, guild_id).await;
-    if let Some(current) = take_current(data, guild_id).await {
-        current
-            .handle
-            .stop()
-            .map_err(|error| BotError::Track(error.to_string()))?;
+    let _guard = lock.lock().await;
+
+    if let Some(player_ctx) = data.lavalink.get_player_context(guild_id.get()) {
+        // Clear the queue first to prevent auto-advance, then stop the track.
+        let queue_ref = player_ctx.get_queue();
+        let _ = queue_ref.clear();
+        if let Err(error) = player_ctx.stop_now().await {
+            tracing::warn!(guild_id = %guild_id, error = %error, "failed to stop playback");
+        }
     }
-    drop(guard);
+    drop(_guard);
 
     ctx.send(CreateReply::default().embed(embeds::success(
         "หยุดเล่นเพลงแล้ว",

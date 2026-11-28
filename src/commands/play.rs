@@ -1,17 +1,16 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use poise::CreateReply;
 
-use crate::audio::cache::CacheKey;
-use crate::audio::events::attach_lifecycle_events;
-use crate::audio::prefetch::schedule_next;
+use crate::audio::loader::{load_tracks, track_duration, track_url, LoadedTracks};
 use crate::audio::query::classify;
-use crate::audio::queue::{enqueue, is_idle};
-use crate::audio::source::{build_input, resolve_metadata};
-use crate::audio::voice::{author_voice_channel, channel_is_cached};
+use crate::audio::voice::{channel_is_cached, current_voice_channel, ensure_player_context};
 use crate::error::BotError;
-use crate::state::{BotData, CurrentTrack, QueuedTrack};
+use crate::state::BotData;
 use crate::ui::embeds;
+
+/// Maximum tracks allowed in the queue per guild.
+const MAX_QUEUE_SIZE: usize = 200;
 
 /// Play a URL or search a YouTube query; queue it if something is playing.
 #[poise::command(slash_command, guild_only)]
@@ -21,9 +20,12 @@ pub async fn play(
 ) -> Result<(), BotError> {
     let command_started = Instant::now();
     ctx.defer().await?;
-    let defer_ms = command_started.elapsed();
 
-    let (guild_id, channel_id) = author_voice_channel(ctx)?;
+    let guild_id = ctx
+        .guild_id()
+        .ok_or_else(|| BotError::Voice("this command must be used in a guild".to_owned()))?;
+    let channel_id = current_voice_channel(ctx.cache(), guild_id, ctx.author().id)
+        .ok_or(BotError::NotInVoice)?;
     if !channel_is_cached(ctx.cache(), guild_id, channel_id) {
         return Err(BotError::Voice("voice channel is not available".to_owned()));
     }
@@ -35,143 +37,127 @@ pub async fn play(
     let lock = data.guild_lock(guild_id).await;
     let _guard = lock.lock().await;
 
-    let key = CacheKey::new(
-        query.as_str(),
-        data.config.youtube_cookies_path.as_deref().unwrap_or(""),
-    );
-    let cache_hit = data.metadata_cache.get_fresh(&key).await.is_some();
+    // Ensure a player context exists (joins voice if needed).
+    let player_ctx =
+        ensure_player_context(ctx.serenity_context(), data, guild_id, channel_id).await?;
 
-    let join_started = Instant::now();
+    // Load tracks from Lavalink.
     let resolve_started = Instant::now();
-    let needs_join = match data.voice.get(guild_id) {
-        Some(call) => call.lock().await.current_channel() != Some(channel_id.into()),
-        None => true,
-    };
+    let loaded = load_tracks(&data.lavalink, guild_id.get(), &query).await?;
+    let resolve_ms = resolve_started.elapsed();
 
-    let (resolved, join_ms, resolve_ms, voice_reused) = if needs_join {
-        let join_future = async {
-            let result = data.voice.join(guild_id, channel_id).await;
-            (result, join_started.elapsed())
-        };
-        let resolve_future = async {
-            let result = resolve_metadata(data, &query).await;
-            (result, resolve_started.elapsed())
-        };
+    match loaded {
+        LoadedTracks::Single(track) | LoadedTracks::SearchResult(track) => {
+            let title = track.info.title.clone();
+            let url = track_url(&track);
+            let duration = track_duration(&track);
 
-        let (join_result, resolve_result) = tokio::join!(join_future, resolve_future);
-        let (join_outcome, measured_join_ms) = join_result;
-        let (resolve_outcome, measured_resolve_ms) = resolve_result;
+            // Attach requester metadata.
+            let mut track_with_data = track;
+            track_with_data.user_data = Some(serde_json::json!({ "requester": requester }));
 
-        if let Err(error) = join_outcome {
-            return Err(BotError::Voice(error.to_string()));
-        }
+            // Check if player is idle.
+            let player = player_ctx
+                .get_player()
+                .await
+                .map_err(|e| BotError::Lavalink(e.to_string()))?;
+            let is_idle = player.track.is_none();
 
-        match resolve_outcome {
-            Ok(metadata) => (metadata, measured_join_ms, measured_resolve_ms, false),
-            Err(error) => {
-                if let Err(leave_error) = data.voice.leave(guild_id).await {
-                    tracing::debug!(error = ?leave_error, "cleanup after failed resolution failed");
+            if is_idle {
+                player_ctx
+                    .play_now(&track_with_data)
+                    .await
+                    .map_err(|e| BotError::Lavalink(e.to_string()))?;
+                let embed = embeds::now_playing(&title, Some(&url), &requester, duration, None);
+                ctx.send(CreateReply::default().embed(embed)).await?;
+            } else {
+                let queue_ref = player_ctx.get_queue();
+                let count = queue_ref
+                    .get_count()
+                    .await
+                    .map_err(|e| BotError::Lavalink(e.to_string()))?;
+                if count >= MAX_QUEUE_SIZE {
+                    ctx.send(CreateReply::default().embed(embeds::error(
+                        "คิวเต็มแล้ว",
+                        format!("คิวเพลงมีจำนวนสูงสุด {MAX_QUEUE_SIZE} เพลง"),
+                    )))
+                    .await?;
+                    return Ok(());
                 }
-                return Err(error);
+                queue_ref
+                    .push_to_back(track_with_data)
+                    .map_err(|e| BotError::Lavalink(e.to_string()))?;
+                ctx.send(CreateReply::default().embed(embeds::success(
+                    "เพิ่มเพลงเข้าคิวแล้ว",
+                    format!("**{title}** ถูกเพิ่มเข้าคิว"),
+                )))
+                .await?;
             }
+
+            tracing::info!(
+                command = "play",
+                guild_id = %guild_id,
+                resolve_ms = resolve_ms.as_millis() as u64,
+                total_ms = command_started.elapsed().as_millis() as u64,
+                outcome = if is_idle { "playing" } else { "queued" },
+                "play command completed"
+            );
         }
-    } else {
-        let resolved = resolve_metadata(data, &query).await?;
-        (resolved, Duration::ZERO, resolve_started.elapsed(), true)
-    };
+        LoadedTracks::Playlist { meta, tracks } => {
+            let total = tracks.len();
+            let queue_ref = player_ctx.get_queue();
+            let existing = queue_ref
+                .get_count()
+                .await
+                .map_err(|e| BotError::Lavalink(e.to_string()))?;
+            let capacity = MAX_QUEUE_SIZE.saturating_sub(existing);
 
-    if !is_idle(data, guild_id).await {
-        let queued = QueuedTrack {
-            title: resolved.title.clone(),
-            url: resolved.url.clone(),
-            requester: requester.clone(),
-            duration: resolved.duration,
-        };
-        let enqueue_started = Instant::now();
-        enqueue(data, guild_id, queued).await;
-        schedule_next(data, guild_id).await;
-        let enqueue_ms = enqueue_started.elapsed();
+            let mut added = 0usize;
+            for track in tracks.into_iter().take(capacity) {
+                let mut track_with_data = track;
+                track_with_data.user_data = Some(serde_json::json!({ "requester": requester }));
+                if queue_ref.push_to_back(track_with_data).is_ok() {
+                    added += 1;
+                }
+            }
 
-        let reply_started = Instant::now();
-        ctx.send(CreateReply::default().embed(embeds::success(
-            "เพิ่มเพลงเข้าคิวแล้ว",
-            format!("**{}** ถูกเพิ่มเข้าคิว", resolved.title),
-        )))
-        .await?;
-        let reply_ms = reply_started.elapsed();
+            // If nothing was playing, start playback from the queue.
+            let player = player_ctx
+                .get_player()
+                .await
+                .map_err(|e| BotError::Lavalink(e.to_string()))?;
+            if player.track.is_none() {
+                let _ = player_ctx.skip();
+            }
 
-        tracing::info!(
-            command = "play",
-            guild_id = %guild_id,
-            cache_hit,
-            prefetch_hit = false,
-            voice_reused,
-            defer_ms = defer_ms.as_millis() as u64,
-            join_ms = join_ms.as_millis() as u64,
-            resolve_ms = resolve_ms.as_millis() as u64,
-            enqueue_ms = enqueue_ms.as_millis() as u64,
-            reply_ms = reply_ms.as_millis() as u64,
-            total_ms = command_started.elapsed().as_millis() as u64,
-            outcome = "queued",
-            "play command completed"
-        );
-        return Ok(());
+            let description = if added < total {
+                format!("เพิ่ม **{added}** จาก {total} เพลงใน **{}**", meta.name)
+            } else {
+                format!("เพิ่ม {added} เพลงจาก **{}**", meta.name)
+            };
+
+            ctx.send(CreateReply::default().embed(embeds::success("เพิ่มเพลย์ลิสต์แล้ว", description)))
+                .await?;
+
+            tracing::info!(
+                command = "play",
+                guild_id = %guild_id,
+                playlist_name = %meta.name,
+                tracks_total = total,
+                tracks_added = added,
+                resolve_ms = resolve_ms.as_millis() as u64,
+                total_ms = command_started.elapsed().as_millis() as u64,
+                outcome = "playlist",
+                "play command completed"
+            );
+        }
+        LoadedTracks::Empty => {
+            ctx.send(
+                CreateReply::default().embed(embeds::error("ไม่พบผลลัพธ์", "ไม่พบเพลงที่ตรงกับคำค้นหา")),
+            )
+            .await?;
+        }
     }
 
-    let input = build_input(data, &query);
-    let call = data
-        .voice
-        .get(guild_id)
-        .ok_or_else(|| BotError::Voice("no active voice call".to_owned()))?;
-
-    let play_started = Instant::now();
-    let handle = {
-        let mut guard = call.lock().await;
-        guard.play_input(input)
-    };
-    let playback_start_ms = play_started.elapsed();
-
-    let generation = data.bump_generation(guild_id).await;
-    attach_lifecycle_events(&handle, guild_id, data, generation)?;
-
-    let current = CurrentTrack {
-        handle,
-        metadata: QueuedTrack {
-            title: resolved.title.clone(),
-            url: resolved.url.clone(),
-            requester: requester.clone(),
-            duration: resolved.duration,
-        },
-    };
-    data.current.lock().await.insert(guild_id, current);
-    schedule_next(data, guild_id).await;
-
-    let embed = embeds::now_playing(
-        &resolved.title,
-        Some(&resolved.url),
-        &requester,
-        resolved.duration,
-        None,
-    );
-
-    let reply_started = Instant::now();
-    ctx.send(CreateReply::default().embed(embed)).await?;
-    let reply_ms = reply_started.elapsed();
-
-    tracing::info!(
-        command = "play",
-        guild_id = %guild_id,
-        cache_hit,
-        prefetch_hit = false,
-        voice_reused,
-        defer_ms = defer_ms.as_millis() as u64,
-        join_ms = join_ms.as_millis() as u64,
-        resolve_ms = resolve_ms.as_millis() as u64,
-        playback_start_ms = playback_start_ms.as_millis() as u64,
-        reply_ms = reply_ms.as_millis() as u64,
-        total_ms = command_started.elapsed().as_millis() as u64,
-        outcome = "playing",
-        "play command completed"
-    );
     Ok(())
 }

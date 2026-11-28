@@ -1,0 +1,52 @@
+services:
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4.2.2
+    container_name: wavemelo-lavalink
+    restart: unless-stopped
+    environment:
+      # Documented Lavalink env override; takes precedence over application.yml.
+      LAVALINK_SERVER_PASSWORD: ${LAVALINK_PASSWORD:?set LAVALINK_PASSWORD in .env}
+      # The image entrypoint is `java -jar`, which never reads JAVA_OPTS.
+      # JAVA_TOOL_OPTIONS is picked up by the JVM itself.
+      JAVA_TOOL_OPTIONS: "-Xmx1G"
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      # No named volumes for plugins/logs: the image runs as uid 322 and a
+      # fresh named volume would be root-owned, breaking plugin downloads.
+      # Plugins re-download into the container layer on re-creation.
+    ports:
+      # Loopback-only publish: lets a local `cargo run` reach the node
+      # without exposing it to the LAN. Remove for remote-only deployments.
+      - "127.0.0.1:2333:2333"
+    healthcheck:
+      # TCP probe via bash /dev/tcp; avoids depending on curl/wget being
+      # present in the base image. Spring opens the port last at startup.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/2333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    networks:
+      - wavemelo
+
+  bot:
+    build: .
+    container_name: wavemelo-bot
+    restart: unless-stopped
+    depends_on:
+      lavalink:
+        condition: service_healthy
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?set DISCORD_TOKEN in .env}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      LAVALINK_HOST: lavalink
+      LAVALINK_PORT: "2333"
+      LAVALINK_PASSWORD: ${LAVALINK_PASSWORD:?set LAVALINK_PASSWORD in .env}
+      LAVALINK_SECURE: "false"
+      RUST_LOG: ${RUST_LOG:-info,wavemelo=debug}
+    networks:
+      - wavemelo
+
+networks:
+  wavemelo:
+    driver: bridge

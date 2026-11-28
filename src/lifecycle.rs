@@ -1,35 +1,31 @@
-/// Wait for SIGINT (Ctrl+C) or SIGTERM and then return so the caller can shut down.
-pub async fn shutdown_signal() {
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal;
 
-        match signal(SignalKind::terminate()) {
-            Ok(mut terminate) => {
-                tokio::select! {
-                    result = tokio::signal::ctrl_c() => {
-                        if let Err(error) = result {
-                            tracing::warn!(error = %error, "failed to listen for CTRL+C");
-                        }
-                    }
-                    _ = terminate.recv() => {
-                        tracing::info!("received SIGTERM");
-                    }
-                }
+/// Wait for a platform-appropriate shutdown signal (Ctrl+C on Windows, SIGTERM on Unix).
+pub async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = signal::ctrl_c().await {
+            tracing::warn!(error = %error, "failed to install Ctrl+C handler");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            Ok(mut stream) => {
+                stream.recv().await;
             }
             Err(error) => {
                 tracing::warn!(error = %error, "failed to install SIGTERM handler");
-                if let Err(error) = tokio::signal::ctrl_c().await {
-                    tracing::warn!(error = %error, "failed to listen for CTRL+C");
-                }
+                std::future::pending::<()>().await;
             }
         }
-    }
+    };
 
     #[cfg(not(unix))]
-    {
-        if let Err(error) = tokio::signal::ctrl_c().await {
-            tracing::warn!(error = %error, "failed to listen for CTRL+C");
-        }
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
     }
 }

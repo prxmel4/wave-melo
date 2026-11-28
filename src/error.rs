@@ -9,8 +9,6 @@ pub enum BotError {
     Environment(#[from] dotenvy::Error),
     #[error("logging initialization failed: {0}")]
     Logging(String),
-    #[error("HTTP client error")]
-    Http(#[from] reqwest::Error),
     #[error("Discord API error")]
     Discord(Box<serenity::Error>),
     #[error("voice connection failed: {0}")]
@@ -23,8 +21,8 @@ pub enum BotError {
     NotInVoice,
     #[error("the queue is empty")]
     QueueEmpty,
-    #[error("yt-dlp failed: {0}")]
-    YtDlp(String),
+    #[error("Lavalink error: {0}")]
+    Lavalink(String),
     #[error("{0}")]
     Message(String),
 }
@@ -44,14 +42,13 @@ impl BotError {
             Self::Config(_) | Self::Environment(_) | Self::Logging(_) => {
                 "การตั้งค่าของบอทไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ"
             }
-            Self::Http(_) => "เกิดปัญหาการเชื่อมต่อภายนอก กรุณาลองใหม่ในภายหลัง",
             Self::Discord(_) => "เกิดปัญหาการเชื่อมต่อกับ Discord กรุณาลองใหม่ในภายหลัง",
             Self::Voice(_) => "ไม่สามารถเข้าห้องเสียงได้ กรุณาตรวจสอบสิทธิ์ของบอท",
             Self::Track(_) => "เกิดปัญหาในการเล่นเพลง กรุณาลองใหม่",
             Self::InvalidQuery(_) => "รูปแบบลิงก์หรือคำค้นหาไม่ถูกต้อง",
             Self::NotInVoice => "คุณต้องอยู่ในห้องเสียงก่อนใช้คำสั่งนี้",
             Self::QueueEmpty => "คิวเพลงว่างอยู่",
-            Self::YtDlp(_) => "ไม่สามารถดึงข้อมูลเพลงได้ กรุณาลองใหม่ในภายหลัง",
+            Self::Lavalink(_) => "ไม่สามารถดึงข้อมูลเพลงได้ กรุณาลองใหม่ในภายหลัง",
             Self::Message(_) => "เกิดข้อผิดพลาด กรุณาลองใหม่ในภายหลัง",
         }
     }
@@ -98,7 +95,7 @@ mod tests {
                 "รูปแบบลิงก์หรือคำค้นหาไม่ถูกต้อง",
             ),
             (
-                BotError::YtDlp("failed".to_owned()),
+                BotError::Lavalink("failed".to_owned()),
                 "ไม่สามารถดึงข้อมูลเพลงได้ กรุณาลองใหม่ในภายหลัง",
             ),
             (
@@ -115,7 +112,7 @@ mod tests {
     #[test]
     fn user_message_does_not_leak_internal_details() {
         let marker = "internal-only-marker";
-        let error = BotError::YtDlp(marker.to_owned());
+        let error = BotError::Lavalink(marker.to_owned());
 
         assert!(error.to_string().contains(marker));
         assert!(!error.user_message().contains(marker));

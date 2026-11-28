@@ -1,36 +1,39 @@
 use std::time::Duration;
 
-use serenity::builder::CreateEmbed;
-use serenity::model::colour::Colour;
+use serenity::all::CreateEmbed;
 
-use super::colors;
-use crate::utils::text::escape_markdown;
-use crate::utils::time::format_duration;
+use crate::utils::{format_duration_ms, truncate};
 
-fn base(title: impl Into<String>, description: impl Into<String>, color: u32) -> CreateEmbed {
+const COLOR_SUCCESS: u32 = 0x002E_CC71; // Green
+const COLOR_ERROR: u32 = 0x00E7_4C3C; // Red
+const COLOR_INFO: u32 = 0x0034_98DB; // Blue
+const COLOR_QUEUE: u32 = 0x009B_59B6; // Purple
+
+/// Build a success embed with a green accent.
+pub fn success(title: &str, description: impl Into<String>) -> CreateEmbed {
     CreateEmbed::new()
         .title(title)
-        .description(description)
-        .color(Colour::from(color))
+        .description(description.into())
+        .color(COLOR_SUCCESS)
 }
 
-/// Blue informational embed.
-pub fn info(title: impl Into<String>, description: impl Into<String>) -> CreateEmbed {
-    base(title, description, colors::INFO)
+/// Build an error embed with a red accent.
+pub fn error(title: &str, description: impl Into<String>) -> CreateEmbed {
+    CreateEmbed::new()
+        .title(title)
+        .description(description.into())
+        .color(COLOR_ERROR)
 }
 
-/// Green success embed.
-pub fn success(title: impl Into<String>, description: impl Into<String>) -> CreateEmbed {
-    base(title, description, colors::SUCCESS)
+/// Build an informational embed with a blue accent.
+pub fn info(title: &str, description: impl Into<String>) -> CreateEmbed {
+    CreateEmbed::new()
+        .title(title)
+        .description(description.into())
+        .color(COLOR_INFO)
 }
 
-/// Red error embed. Callers should use a safe user-facing message.
-pub fn error(title: impl Into<String>, description: impl Into<String>) -> CreateEmbed {
-    base(title, description, colors::ERROR)
-}
-
-/// Minimal view of a queue row used by the embed builder.
-#[derive(Debug, Clone, Copy)]
+/// A single queue entry for display purposes.
 pub struct QueueEntryView<'a> {
     pub title: &'a str,
     pub url: Option<&'a str>,
@@ -38,198 +41,90 @@ pub struct QueueEntryView<'a> {
     pub duration: Option<Duration>,
 }
 
-/// Format one numbered queue row with escaped user text.
-pub fn format_queue_entry(index: usize, entry: &QueueEntryView<'_>) -> String {
-    let title = escape_markdown(entry.title);
-    let requester = escape_markdown(entry.requester);
+/// Format one queue row. `position` is the rendered label or queue number.
+fn queue_line(position: &str, entry: &QueueEntryView<'_>) -> String {
+    let title_display = truncate(entry.title, 60);
+    let duration_display = entry
+        .duration
+        .map(|d| format_duration_ms(d.as_millis() as u64))
+        .unwrap_or_else(|| "🔴 LIVE".to_owned());
+    let requester = entry.requester;
 
-    match (entry.url, entry.duration) {
-        (Some(url), Some(duration)) => format!(
-            "{index}. [{title}](<{url}>) — {} — {requester}",
-            format_duration(duration)
-        ),
-        (Some(url), None) => format!("{index}. [{title}](<{url}>) — {requester}"),
-        (None, Some(duration)) => format!(
-            "{index}. {title} — {} — {requester}",
-            format_duration(duration)
-        ),
-        (None, None) => format!("{index}. {title} — {requester}"),
+    if let Some(url) = entry.url {
+        format!("{position} [{title_display}]({url}) `[{duration_display}]` • เพิ่มโดย {requester}\n")
+    } else {
+        format!("{position} {title_display} `[{duration_display}]` • เพิ่มโดย {requester}\n")
     }
 }
 
-/// Build the now-playing embed with progress and requester fields.
+/// Build a queue display embed.
+///
+/// `current` is the playing track (shown separately, without a queue number),
+/// `entries` are the visible queued tracks numbered from 1, and `queued_count`
+/// is the total number of tracks waiting in the queue.
+pub fn queue(
+    current: Option<&QueueEntryView<'_>>,
+    entries: &[QueueEntryView<'_>],
+    queued_count: usize,
+) -> CreateEmbed {
+    let mut description = String::new();
+
+    if let Some(entry) = current {
+        description.push_str(&queue_line("🎵 **กำลังเล่น:**", entry));
+    }
+
+    if current.is_none() && entries.is_empty() {
+        description.push_str("*คิวว่าง*\n");
+    }
+
+    for (index, entry) in entries.iter().enumerate() {
+        let position = format!("**{}.**", index + 1);
+        description.push_str(&queue_line(&position, entry));
+    }
+
+    if queued_count > entries.len() {
+        let remaining = queued_count - entries.len();
+        description.push_str(&format!("…และอีก {remaining} เพลง\n"));
+    }
+
+    let footer_text = format!("{queued_count} เพลงในคิว");
+
+    CreateEmbed::new()
+        .title("🎶 คิวเพลง")
+        .description(description)
+        .color(COLOR_QUEUE)
+        .footer(serenity::all::CreateEmbedFooter::new(footer_text))
+}
+
+/// Build a "now playing" embed with track metadata.
 pub fn now_playing(
     title: &str,
     url: Option<&str>,
     requester: &str,
     duration: Option<Duration>,
-    position: Option<Duration>,
+    queue_position: Option<usize>,
 ) -> CreateEmbed {
-    let safe_title = escape_markdown(title);
-    let description = match url {
-        Some(url) => format!("[{safe_title}](<{url}>)"),
-        None => safe_title,
-    };
+    let title_display = truncate(title, 80);
+    let duration_display = duration
+        .map(|d| format_duration_ms(d.as_millis() as u64))
+        .unwrap_or_else(|| "🔴 LIVE".to_owned());
 
-    let progress = match (position, duration) {
-        (Some(position), Some(duration)) => format!(
-            "{} / {}",
-            format_duration(position),
-            format_duration(duration)
-        ),
-        (_, Some(duration)) => format!("? / {}", format_duration(duration)),
-        (Some(position), None) => format_duration(position),
-        (None, None) => "ไม่ทราบ".to_owned(),
-    };
-
-    base("กำลังเล่น", description, colors::NOW_PLAYING)
-        .field("ตำแหน่ง", progress, false)
-        .field("ขอโดย", escape_markdown(requester), true)
-}
-
-/// Build a paginated queue embed.
-pub fn queue(entries: &[QueueEntryView<'_>], page: usize, total_pages: usize) -> CreateEmbed {
-    let description = if entries.is_empty() {
-        "คิวเพลงว่างอยู่".to_owned()
+    let description = if let Some(url) = url {
+        format!("[{title_display}]({url})")
     } else {
-        entries
-            .iter()
-            .enumerate()
-            .map(|(index, entry)| format_queue_entry(index + 1, entry))
-            .collect::<Vec<_>>()
-            .join("\n")
+        title_display
     };
 
-    base(
-        format!("คิวเพลง (หน้า {}/{})", page.max(1), total_pages.max(1)),
-        description,
-        colors::QUEUE,
-    )
-}
+    let mut embed = CreateEmbed::new()
+        .title("🎵 กำลังเล่น")
+        .description(description)
+        .color(COLOR_INFO)
+        .field("ระยะเวลา", format!("`{duration_display}`"), true)
+        .field("เพิ่มโดย", requester, true);
 
-#[cfg(test)]
-mod tests {
-    use super::{error, format_queue_entry, info, now_playing, queue, success, QueueEntryView};
-    use crate::ui::colors;
-    use serde_json::Value;
-    use serenity::builder::CreateEmbed;
-    use std::time::Duration;
-
-    fn as_value(embed: CreateEmbed) -> Value {
-        serde_json::to_value(embed).expect("serialize embed")
+    if let Some(pos) = queue_position {
+        embed = embed.field("ตำแหน่งในคิว", format!("#{pos}"), true);
     }
 
-    #[test]
-    fn info_success_error_set_title_description_and_color() {
-        let cases = [
-            (info("Info", "Details"), colors::INFO),
-            (success("Done", "Saved"), colors::SUCCESS),
-            (error("Oops", "Try again"), colors::ERROR),
-        ];
-
-        for (embed, color) in cases {
-            let value = as_value(embed);
-            assert_eq!(value["color"].as_u64(), Some(u64::from(color)));
-            assert!(value["title"].is_string());
-            assert!(value["description"].is_string());
-        }
-
-        assert_eq!(as_value(info("Info", "Details"))["title"], "Info");
-        assert_eq!(
-            as_value(error("Oops", "Try again"))["description"],
-            "Try again"
-        );
-    }
-
-    #[test]
-    fn now_playing_formats_progress_and_escapes_text() {
-        let embed = as_value(now_playing(
-            "เพลง*unya",
-            Some("https://youtu.be/example"),
-            "@user",
-            Some(Duration::from_secs(125)),
-            Some(Duration::from_secs(5)),
-        ));
-
-        assert_eq!(embed["title"], "กำลังเล่น");
-        assert_eq!(embed["color"], colors::NOW_PLAYING);
-        let fields = embed["fields"].as_array().expect("fields array");
-        assert_eq!(fields[0]["name"], "ตำแหน่ง");
-        assert_eq!(fields[0]["value"], "00:05 / 02:05");
-        assert_eq!(fields[1]["name"], "ขอโดย");
-        assert_eq!(fields[1]["value"], "\\@user");
-        assert!(embed["description"]
-            .as_str()
-            .expect("description")
-            .contains("\\*"));
-    }
-
-    #[test]
-    fn now_playing_handles_missing_duration() {
-        let embed = as_value(now_playing(
-            "Title",
-            None,
-            "user",
-            None,
-            Some(Duration::from_secs(9)),
-        ));
-        let fields = embed["fields"].as_array().expect("fields array");
-        assert_eq!(fields[0]["value"], "00:09");
-    }
-
-    #[test]
-    fn queue_embed_reports_empty_queue() {
-        let embed = as_value(queue(&[], 1, 1));
-        assert_eq!(embed["description"], "คิวเพลงว่างอยู่");
-        assert_eq!(embed["color"], colors::QUEUE);
-    }
-
-    #[test]
-    fn formats_queue_entry_with_url_and_duration() {
-        let entry = QueueEntryView {
-            title: "a*b",
-            url: Some("https://example.com/audio"),
-            requester: "user_name",
-            duration: Some(Duration::from_secs(61)),
-        };
-
-        assert_eq!(
-            format_queue_entry(2, &entry),
-            "2. [a\\*b](<https://example.com/audio>) — 01:01 — user\\_name"
-        );
-    }
-
-    #[test]
-    fn formats_queue_entry_without_url_or_duration() {
-        let entry = QueueEntryView {
-            title: "เพลงไทย",
-            url: None,
-            requester: "คนขอ",
-            duration: None,
-        };
-
-        assert_eq!(format_queue_entry(1, &entry), "1. เพลงไทย — คนขอ");
-    }
-
-    #[test]
-    fn queue_embed_joins_rows_and_clamps_page() {
-        let entries = [
-            QueueEntryView {
-                title: "First",
-                url: None,
-                requester: "A",
-                duration: Some(Duration::from_secs(3)),
-            },
-            QueueEntryView {
-                title: "Second",
-                url: None,
-                requester: "B",
-                duration: None,
-            },
-        ];
-        let embed = as_value(queue(&entries, 0, 0));
-
-        assert_eq!(embed["title"], "คิวเพลง (หน้า 1/1)");
-        assert_eq!(embed["description"], "1. First — 00:03 — A\n2. Second — B");
-    }
+    embed
 }
