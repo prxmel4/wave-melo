@@ -176,6 +176,10 @@ pub async fn queuejump(
     player_ctx
         .skip()
         .map_err(|error| BotError::Lavalink(error.to_string()))?;
+    {
+        let session = data.guild_states.session(guild_id.get());
+        session.details.lock().await.bump_control_generation();
+    }
     drop(_guard);
 
     ctx.send(CreateReply::default().embed(embeds::success(

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use poise::{FrameworkContext, FrameworkError};
+use serenity::all::Interaction;
 use serenity::client::FullEvent;
 use serenity::gateway::ActivityData;
 use serenity::model::gateway::GatewayIntents;
@@ -48,6 +49,16 @@ pub async fn event_handler(
         }
         FullEvent::VoiceStateUpdate { .. } | FullEvent::VoiceServerUpdate { .. } => {
             handle_voice_event(event, data, framework.bot_id()).await;
+        }
+        FullEvent::InteractionCreate {
+            interaction: Interaction::Component(component),
+        } => {
+            if let Err(error) =
+                crate::ui::controls::handle_component(framework.serenity_context, component, data)
+                    .await
+            {
+                tracing::warn!(error = ?error, "component interaction handler failed");
+            }
         }
         _ => {}
     }

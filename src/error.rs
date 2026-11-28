@@ -19,6 +19,10 @@ pub enum BotError {
     InvalidVolume(String),
     #[error("invalid queue index: {0}")]
     InvalidQueueIndex(String),
+    #[error("invalid component id: {0}")]
+    InvalidComponent(String),
+    #[error("interactive control is no longer valid")]
+    StaleControl,
     #[error("no active player in this guild")]
     NoActivePlayer,
     #[error("voice connection failed: {0}")]
@@ -59,6 +63,9 @@ impl BotError {
             Self::Track(_) => "Playback failed. Please try again.",
             Self::InvalidVolume(_) => "Volume must be between 0 and 150.",
             Self::InvalidQueueIndex(_) => "That queue position is invalid.",
+            Self::InvalidComponent(_) | Self::StaleControl => {
+                "That control is no longer valid. Use /nowplaying for fresh controls."
+            }
             Self::InvalidSeek(_) => {
                 "That position is invalid or outside this track. Use a value like 90 or 01:30."
             }

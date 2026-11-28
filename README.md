@@ -149,6 +149,10 @@ names, lyrics, and user-supplied queries keep their original language.
 `/loop` offers built-in autocomplete. `/play` suggests up to five recently
 played titles without contacting external services.
 
+`/nowplaying` includes buttons for pause/resume, skip, stop, and volume steps.
+Controls require the same voice channel and expire automatically when the
+track changes; use `/nowplaying` again for fresh controls.
+
 ## Development
 
 Quality gates used by CI:

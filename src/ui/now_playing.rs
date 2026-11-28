@@ -1,8 +1,11 @@
 //! Now Playing embed rendering. Pure view data in, Serenity embed out.
 
 use serenity::all::CreateEmbed;
+use serenity::model::id::GuildId;
 
+use crate::error::BotError;
 use crate::playback::seek::progress_bar;
+use crate::state::BotData;
 use crate::utils::{format_duration_ms, truncate};
 
 /// Owned presentation data for the Now Playing embed.
@@ -19,12 +22,63 @@ pub struct NowPlayingView {
     pub active_filter: String,
     pub paused: bool,
     pub connected: bool,
+    /// Generation stamped into interactive controls for stale-button protection.
+    pub generation: u64,
 }
 
 fn safe_http_url(url: Option<&str>) -> Option<&str> {
     url.filter(|value| {
         value.chars().count() <= 512
             && (value.starts_with("https://") || value.starts_with("http://"))
+    })
+}
+
+/// Collect a consistent snapshot of remote player state for presentation.
+///
+/// All remote reads happen here so slash commands and interactive controls
+/// render the same view from the same source of truth.
+pub async fn collect_view(data: &BotData, guild_id: GuildId) -> Result<NowPlayingView, BotError> {
+    let player_ctx = crate::playback::ops::require_player(data, guild_id)?;
+    let player = player_ctx
+        .get_player()
+        .await
+        .map_err(|error| BotError::Lavalink(error.to_string()))?;
+    let track = player.track.ok_or(BotError::NoActivePlayer)?;
+
+    let requester = track
+        .user_data
+        .as_ref()
+        .and_then(|data| data.get("requester"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("Unknown user")
+        .to_owned();
+    let length_ms = (!track.info.is_stream && track.info.length > 0).then_some(track.info.length);
+    let session = data.guild_states.session(guild_id.get());
+    let loop_mode = session.loop_control.mode();
+    let (active_filter, generation) = {
+        let details = session.details.lock().await;
+        (
+            details
+                .active_filter
+                .clone()
+                .unwrap_or_else(|| "None".to_owned()),
+            details.control_generation(),
+        )
+    };
+
+    Ok(NowPlayingView {
+        title: track.info.title.clone(),
+        url: Some(crate::audio::loader::track_url(&track)),
+        author: track.info.author.clone(),
+        requester,
+        position_ms: player.state.position,
+        length_ms,
+        volume: player.volume,
+        loop_mode: loop_mode.as_str().to_owned(),
+        active_filter,
+        paused: player.paused,
+        connected: player.state.connected,
+        generation,
     })
 }
 
@@ -90,6 +144,7 @@ mod tests {
             active_filter: "None".to_owned(),
             paused: false,
             connected: true,
+            generation: 0,
         }
     }
 

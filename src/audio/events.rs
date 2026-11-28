@@ -46,6 +46,7 @@ pub fn on_track_start(
             let mut details = session.details.lock().await;
             details.remember_track(title);
             details.idle_generation = details.idle_generation.wrapping_add(1);
+            details.bump_control_generation();
         }
     })
 }

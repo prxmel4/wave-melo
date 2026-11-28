@@ -8,7 +8,7 @@ use crate::error::BotError;
 use crate::playback::ops::{require_same_voice, set_paused, set_volume};
 use crate::state::{BotData, LoopMode};
 use crate::ui::embeds;
-use crate::ui::now_playing::{self, NowPlayingView};
+use crate::ui::now_playing;
 
 fn command_guild(ctx: poise::Context<'_, BotData, BotError>) -> Result<GuildId, BotError> {
     ctx.guild_id()
@@ -34,6 +34,10 @@ pub async fn skip(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
     player_ctx
         .skip()
         .map_err(|e| BotError::Track(e.to_string()))?;
+    {
+        let session = data.guild_states.session(guild_id.get());
+        session.details.lock().await.bump_control_generation();
+    }
     drop(_guard);
 
     let reply_started = Instant::now();
@@ -72,6 +76,8 @@ pub async fn stop(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
         if let Err(error) = player_ctx.stop_now().await {
             tracing::warn!(guild_id = %guild_id, error = %error, "failed to stop playback");
         }
+        let session = data.guild_states.session(guild_id.get());
+        session.details.lock().await.bump_control_generation();
     }
     drop(_guard);
 
@@ -218,50 +224,15 @@ pub async fn seek(
 pub async fn now_playing(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotError> {
     let guild_id = command_guild(ctx)?;
     let data = ctx.data();
-    let player_ctx = crate::playback::ops::require_player(data, guild_id)?;
-    let player = player_ctx
-        .get_player()
-        .await
-        .map_err(|error| BotError::Lavalink(error.to_string()))?;
-    let track = player.track.ok_or(BotError::NoActivePlayer)?;
+    let view = now_playing::collect_view(data, guild_id).await?;
+    let rows = crate::ui::components::control_rows(guild_id.get(), view.generation, view.paused);
 
-    let requester = track
-        .user_data
-        .as_ref()
-        .and_then(|data| data.get("requester"))
-        .and_then(|value| value.as_str())
-        .unwrap_or("Unknown user")
-        .to_owned();
-    let length_ms = (!track.info.is_stream && track.info.length > 0).then_some(track.info.length);
-    let session = data.guild_states.session(guild_id.get());
-    let loop_mode = match session.loop_control.mode() {
-        LoopMode::Off => "Off",
-        LoopMode::Track => "Track",
-        LoopMode::Queue => "Queue",
-    };
-    let active_filter = {
-        let details = session.details.lock().await;
-        details
-            .active_filter
-            .clone()
-            .unwrap_or_else(|| "None".to_owned())
-    };
-    let view = NowPlayingView {
-        title: track.info.title.clone(),
-        url: Some(crate::audio::loader::track_url(&track)),
-        author: track.info.author.clone(),
-        requester,
-        position_ms: player.state.position,
-        length_ms,
-        volume: player.volume,
-        loop_mode: loop_mode.to_owned(),
-        active_filter,
-        paused: player.paused,
-        connected: player.state.connected,
-    };
-
-    ctx.send(CreateReply::default().embed(now_playing::build(&view)))
-        .await?;
+    ctx.send(
+        CreateReply::default()
+            .embed(now_playing::build(&view))
+            .components(rows),
+    )
+    .await?;
     Ok(())
 }
 
@@ -341,6 +312,7 @@ pub async fn loop_mode(
 
     let mut details = session.details.lock().await;
     details.mark_manual();
+    details.bump_control_generation();
     drop(details);
     drop(_guard);
 

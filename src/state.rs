@@ -162,6 +162,8 @@ pub struct GuildState {
     pub autoplay: bool,
     pub recent_tracks: VecDeque<String>,
     pub idle_generation: u64,
+    /// Invalidates interactive controls after a playback transition.
+    pub control_generation: u64,
     /// Set by manual transitions so event handlers do not treat them as natural ends.
     pub manual_transition: bool,
     /// Deduplicates a repeated TrackStart for the same injected loop copy.
@@ -177,6 +179,7 @@ impl Default for GuildState {
             autoplay: false,
             recent_tracks: VecDeque::new(),
             idle_generation: 0,
+            control_generation: 0,
             manual_transition: false,
             last_loop_start: None,
         }
@@ -198,6 +201,16 @@ impl GuildState {
     /// Mark the most recent transition as manual.
     pub fn mark_manual(&mut self) {
         self.manual_transition = true;
+    }
+
+    /// Read the generation embedded in interactive controls.
+    pub fn control_generation(&self) -> u64 {
+        self.control_generation
+    }
+
+    /// Invalidate every previously issued interactive control.
+    pub fn bump_control_generation(&mut self) {
+        self.control_generation = self.control_generation.wrapping_add(1);
     }
 
     /// Consume the manual-transition flag.
@@ -401,5 +414,16 @@ mod tests {
         }
         assert!(state.recent_tracks.len() <= 20);
         assert_eq!(state.recent_tracks.back().unwrap(), "99");
+    }
+
+    #[test]
+    fn control_generation_invalidates_previous_buttons() {
+        let mut state = GuildState::default();
+        assert_eq!(state.control_generation(), 0);
+        state.bump_control_generation();
+        assert_eq!(state.control_generation(), 1);
+        let second = state.control_generation();
+        state.bump_control_generation();
+        assert_ne!(state.control_generation(), second);
     }
 }
