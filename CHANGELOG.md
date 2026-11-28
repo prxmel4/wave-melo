@@ -7,6 +7,18 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-28
+
+### Added
+
+- `/seek <position>` supporting `90`, `01:30`, and `00:01:30` formats with
+  strict validation, checked conversion, live/non-seekable rejection, and
+  out-of-bounds protection.
+- `/nowplaying` with track title, URL, artist, requester, position, duration,
+  volume, loop mode, active filter, status, and a responsive progress bar.
+- Pure seek parsing/validation and progress-bar modules with deterministic
+  tests for malformed input, overflow, and live streams.
+
 ## [0.4.0] - 2026-11-28
 
 ### Added
