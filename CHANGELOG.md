@@ -7,6 +7,17 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-28
+
+### Added
+
+- `/shuffleq` randomizes upcoming tracks with a time-seeded Fisher-Yates
+  shuffle; blocked while loop mode is active to preserve marker semantics.
+- `/history` shows the most recent tracks from bounded in-process state.
+- Interactive `/queue` pagination with `wavemelo:queue:<guild>:<page>` buttons
+  for First/Previous/Next/Last navigation.
+- Pure pagination helpers with boundary tests.
+
 ## [0.9.0] - 2026-11-28
 
 ### Added
