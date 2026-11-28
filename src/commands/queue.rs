@@ -19,7 +19,7 @@ fn requester_of(track: &TrackData) -> String {
         .as_ref()
         .and_then(|data| data.get("requester"))
         .and_then(|value| value.as_str())
-        .unwrap_or("ไม่ทราบผู้ใช้")
+        .unwrap_or("Unknown user")
         .to_owned()
 }
 

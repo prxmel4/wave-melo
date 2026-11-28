@@ -51,9 +51,11 @@ fn queue_line(position: &str, entry: &QueueEntryView<'_>) -> String {
     let requester = entry.requester;
 
     if let Some(url) = entry.url {
-        format!("{position} [{title_display}]({url}) `[{duration_display}]` • เพิ่มโดย {requester}\n")
+        format!(
+            "{position} [{title_display}]({url}) `[{duration_display}]` • Added by {requester}\n"
+        )
     } else {
-        format!("{position} {title_display} `[{duration_display}]` • เพิ่มโดย {requester}\n")
+        format!("{position} {title_display} `[{duration_display}]` • Added by {requester}\n")
     }
 }
 
@@ -70,11 +72,11 @@ pub fn queue(
     let mut description = String::new();
 
     if let Some(entry) = current {
-        description.push_str(&queue_line("🎵 **กำลังเล่น:**", entry));
+        description.push_str(&queue_line("🎵 **Now playing:**", entry));
     }
 
     if current.is_none() && entries.is_empty() {
-        description.push_str("*คิวว่าง*\n");
+        description.push_str("*Queue is empty*\n");
     }
 
     for (index, entry) in entries.iter().enumerate() {
@@ -84,13 +86,13 @@ pub fn queue(
 
     if queued_count > entries.len() {
         let remaining = queued_count - entries.len();
-        description.push_str(&format!("…และอีก {remaining} เพลง\n"));
+        description.push_str(&format!("…and {remaining} more tracks\n"));
     }
 
-    let footer_text = format!("{queued_count} เพลงในคิว");
+    let footer_text = format!("{queued_count} tracks in queue");
 
     CreateEmbed::new()
-        .title("🎶 คิวเพลง")
+        .title("🎶 Queue")
         .description(description)
         .color(COLOR_QUEUE)
         .footer(serenity::all::CreateEmbedFooter::new(footer_text))
@@ -116,14 +118,14 @@ pub fn now_playing(
     };
 
     let mut embed = CreateEmbed::new()
-        .title("🎵 กำลังเล่น")
+        .title("🎵 Now Playing")
         .description(description)
         .color(COLOR_INFO)
-        .field("ระยะเวลา", format!("`{duration_display}`"), true)
-        .field("เพิ่มโดย", requester, true);
+        .field("Duration", format!("`{duration_display}`"), true)
+        .field("Added by", requester, true);
 
     if let Some(pos) = queue_position {
-        embed = embed.field("ตำแหน่งในคิว", format!("#{pos}"), true);
+        embed = embed.field("Queue Position", format!("#{pos}"), true);
     }
 
     embed

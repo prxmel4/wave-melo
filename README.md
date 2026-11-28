@@ -12,9 +12,9 @@ YouTube playback works **without a Google OAuth login**: a self-hosted
 
 - Slash commands via Poise with ephemeral, safe error replies
 - `/ping`, `/join`, `/leave`, `/play`, `/skip`, `/stop`, `/queue`
-- URL or YouTube search input, including Thai text
+- URL or YouTube search input, including non-Latin text such as Thai and CJK
 - Playlists and albums, capped at 200 queued tracks per guild
-- UTF-8/Thai-safe truncation and markdown-safe embeds
+- Unicode-safe truncation and markdown-safe embeds
 - Per-guild operation locks to serialize playback transitions
 - JSON structured logs through `RUST_LOG`
 - Graceful shutdown on SIGINT/SIGTERM
@@ -137,7 +137,8 @@ cargo run
 | `/join` | Join your current voice channel |
 | `/leave` | Leave voice and clear the queue |
 
-All replies are in Thai.
+All bot-controlled replies and embeds are in English. Track titles, artist
+names, lyrics, and user-supplied queries keep their original language.
 
 ## Development
 

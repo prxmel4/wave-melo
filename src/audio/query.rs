@@ -105,8 +105,17 @@ mod tests {
     #[test]
     fn normalizes_plain_text_to_ytsearch() {
         assert_eq!(
-            classify("泰国 เพลง").unwrap(),
-            Query::Search("ytsearch:泰国 เพลง".to_owned())
+            classify("jazz piano").unwrap(),
+            Query::Search("ytsearch:jazz piano".to_owned())
+        );
+    }
+
+    #[test]
+    fn preserves_non_latin_search_text() {
+        // External metadata and user input keep their original language.
+        assert_eq!(
+            classify("日本語 曲名").unwrap(),
+            Query::Search("ytsearch:日本語 曲名".to_owned())
         );
     }
 

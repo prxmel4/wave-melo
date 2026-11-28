@@ -40,16 +40,18 @@ impl BotError {
     pub fn user_message(&self) -> &'static str {
         match self {
             Self::Config(_) | Self::Environment(_) | Self::Logging(_) => {
-                "การตั้งค่าของบอทไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ"
+                "The bot is misconfigured. Please contact the server administrator."
             }
-            Self::Discord(_) => "เกิดปัญหาการเชื่อมต่อกับ Discord กรุณาลองใหม่ในภายหลัง",
-            Self::Voice(_) => "ไม่สามารถเข้าห้องเสียงได้ กรุณาตรวจสอบสิทธิ์ของบอท",
-            Self::Track(_) => "เกิดปัญหาในการเล่นเพลง กรุณาลองใหม่",
-            Self::InvalidQuery(_) => "รูปแบบลิงก์หรือคำค้นหาไม่ถูกต้อง",
-            Self::NotInVoice => "คุณต้องอยู่ในห้องเสียงก่อนใช้คำสั่งนี้",
-            Self::QueueEmpty => "คิวเพลงว่างอยู่",
-            Self::Lavalink(_) => "ไม่สามารถดึงข้อมูลเพลงได้ กรุณาลองใหม่ในภายหลัง",
-            Self::Message(_) => "เกิดข้อผิดพลาด กรุณาลองใหม่ในภายหลัง",
+            Self::Discord(_) => "Could not reach Discord. Please try again later.",
+            Self::Voice(_) => {
+                "Could not join the voice channel. Please check the bot's permissions."
+            }
+            Self::Track(_) => "Playback failed. Please try again.",
+            Self::InvalidQuery(_) => "The link or search query is invalid.",
+            Self::NotInVoice => "You must join a voice channel before using this command.",
+            Self::QueueEmpty => "The queue is empty.",
+            Self::Lavalink(_) => "Could not load track data. Please try again later.",
+            Self::Message(_) => "Something went wrong. Please try again later.",
         }
     }
 }
@@ -69,7 +71,7 @@ mod tests {
         );
         assert_eq!(
             error.user_message(),
-            "การตั้งค่าของบอทไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ"
+            "The bot is misconfigured. Please contact the server administrator."
         );
     }
 
@@ -86,21 +88,24 @@ mod tests {
     }
 
     #[test]
-    fn maps_simple_variants_to_thai_user_messages() {
+    fn maps_simple_variants_to_english_user_messages() {
         let cases = [
-            (BotError::NotInVoice, "คุณต้องอยู่ในห้องเสียงก่อนใช้คำสั่งนี้"),
-            (BotError::QueueEmpty, "คิวเพลงว่างอยู่"),
+            (
+                BotError::NotInVoice,
+                "You must join a voice channel before using this command.",
+            ),
+            (BotError::QueueEmpty, "The queue is empty."),
             (
                 BotError::InvalidQuery(String::new()),
-                "รูปแบบลิงก์หรือคำค้นหาไม่ถูกต้อง",
+                "The link or search query is invalid.",
             ),
             (
                 BotError::Lavalink("failed".to_owned()),
-                "ไม่สามารถดึงข้อมูลเพลงได้ กรุณาลองใหม่ในภายหลัง",
+                "Could not load track data. Please try again later.",
             ),
             (
                 BotError::Logging("subscriber".to_owned()),
-                "การตั้งค่าของบอทไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ",
+                "The bot is misconfigured. Please contact the server administrator.",
             ),
         ];
 

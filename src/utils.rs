@@ -14,14 +14,18 @@ pub fn format_duration_ms(ms: u64) -> String {
 
 /// Truncate a string to a maximum character count, appending "..." if truncated.
 ///
-/// Counting characters (not bytes) keeps Thai and other multi-byte text safe.
+/// Counting characters (not bytes) keeps Unicode and other multi-byte text safe.
 pub fn truncate(text: &str, max_len: usize) -> String {
-    if text.chars().count() <= max_len {
-        text.to_owned()
-    } else {
-        let truncated: String = text.chars().take(max_len.saturating_sub(3)).collect();
-        format!("{truncated}...")
+    let char_count = text.chars().count();
+    if char_count <= max_len {
+        return text.to_owned();
     }
+    if max_len <= 3 {
+        return text.chars().take(max_len).collect();
+    }
+
+    let truncated: String = text.chars().take(max_len - 3).collect();
+    format!("{truncated}...")
 }
 
 #[cfg(test)]
@@ -53,6 +57,59 @@ mod tests {
     fn handles_edge_cases() {
         assert_eq!(truncate("", 10), "");
         assert_eq!(truncate("abc", 3), "abc");
-        assert_eq!(truncate("abcdef", 3), "...");
+        assert_eq!(truncate("abcdef", 3), "abc");
+    }
+
+    #[test]
+    fn truncation_never_exceeds_the_requested_length() {
+        for limit in 0..=3 {
+            let result = truncate("abcdef", limit);
+            assert!(result.chars().count() <= limit, "limit {limit}");
+        }
+        assert_eq!(truncate("abcdef", 0), "");
+        assert_eq!(truncate("abcdef", 1), "a");
+        assert_eq!(truncate("abcdef", 2), "ab");
+    }
+
+    #[test]
+    fn truncation_preserves_unicode_boundaries() {
+        let text = "🎵 café 日本語";
+        for limit in 1..=text.chars().count() {
+            let result = truncate(text, limit);
+            assert!(result.chars().count() <= limit, "limit {limit}");
+            let visible = result.strip_suffix("...").unwrap_or(&result);
+            assert!(text.starts_with(visible), "limit {limit}");
+        }
+        assert_eq!(truncate("日本語の曲", 4), "日...");
+    }
+
+    /// Verify the English-only source policy without external tooling.
+    #[test]
+    fn source_contains_no_thai_characters() {
+        fn collect(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+            let entries = std::fs::read_dir(dir).expect("src directory is readable");
+            for entry in entries {
+                let path = entry.expect("directory entry").path();
+                if path.is_dir() {
+                    collect(&path, files);
+                } else if path.extension().is_some_and(|ext| ext == "rs") {
+                    files.push(path);
+                }
+            }
+        }
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        collect(&src, &mut files);
+        assert!(!files.is_empty(), "source files were found");
+
+        for path in files {
+            let contents = std::fs::read_to_string(&path).expect("source file is UTF-8");
+            let thai = contents
+                .chars()
+                .filter(|c| ('\u{0E00}'..='\u{0E7F}').contains(c))
+                .count();
+            assert_eq!(thai, 0, "Thai characters remain in {}", path.display());
+        }
     }
 }

@@ -78,8 +78,8 @@ pub async fn play(
                     .map_err(|e| BotError::Lavalink(e.to_string()))?;
                 if count >= MAX_QUEUE_SIZE {
                     ctx.send(CreateReply::default().embed(embeds::error(
-                        "คิวเต็มแล้ว",
-                        format!("คิวเพลงมีจำนวนสูงสุด {MAX_QUEUE_SIZE} เพลง"),
+                        "Queue is full",
+                        format!("The queue is limited to {MAX_QUEUE_SIZE} tracks."),
                     )))
                     .await?;
                     return Ok(());
@@ -88,8 +88,8 @@ pub async fn play(
                     .push_to_back(track_with_data)
                     .map_err(|e| BotError::Lavalink(e.to_string()))?;
                 ctx.send(CreateReply::default().embed(embeds::success(
-                    "เพิ่มเพลงเข้าคิวแล้ว",
-                    format!("**{title}** ถูกเพิ่มเข้าคิว"),
+                    "Track added to queue",
+                    format!("**{title}** was added to the queue"),
                 )))
                 .await?;
             }
@@ -131,12 +131,12 @@ pub async fn play(
             }
 
             let description = if added < total {
-                format!("เพิ่ม **{added}** จาก {total} เพลงใน **{}**", meta.name)
+                format!("Added **{added}** of {total} tracks from **{}**", meta.name)
             } else {
-                format!("เพิ่ม {added} เพลงจาก **{}**", meta.name)
+                format!("Added {added} tracks from **{}**", meta.name)
             };
 
-            ctx.send(CreateReply::default().embed(embeds::success("เพิ่มเพลย์ลิสต์แล้ว", description)))
+            ctx.send(CreateReply::default().embed(embeds::success("Playlist added", description)))
                 .await?;
 
             tracing::info!(
@@ -152,9 +152,10 @@ pub async fn play(
             );
         }
         LoadedTracks::Empty => {
-            ctx.send(
-                CreateReply::default().embed(embeds::error("ไม่พบผลลัพธ์", "ไม่พบเพลงที่ตรงกับคำค้นหา")),
-            )
+            ctx.send(CreateReply::default().embed(embeds::error(
+                "No results found",
+                "No tracks matched your search.",
+            )))
             .await?;
         }
     }

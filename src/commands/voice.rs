@@ -28,9 +28,10 @@ pub async fn join(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
     let data = ctx.data();
     ensure_player_context(ctx.serenity_context(), data, guild_id, channel_id).await?;
 
-    ctx.send(
-        CreateReply::default().embed(embeds::success("เข้าร่วมห้องเสียงแล้ว", "พร้อมเล่นเพลงด้วย /play")),
-    )
+    ctx.send(CreateReply::default().embed(embeds::success(
+        "Joined voice channel",
+        "Ready to play music with /play.",
+    )))
     .await?;
     Ok(())
 }
@@ -61,7 +62,7 @@ pub async fn leave(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), Bot
     drop(_guard);
     data.remove_guild_state(guild_id).await;
 
-    ctx.send(CreateReply::default().embed(embeds::success("ออกจากห้องเสียงแล้ว", "ล้างคิวเพลงเรียบร้อย")))
+    ctx.send(CreateReply::default().embed(embeds::success("Left voice channel", "Queue cleared.")))
         .await?;
     Ok(())
 }

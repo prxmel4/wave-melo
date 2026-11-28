@@ -30,8 +30,11 @@ pub async fn skip(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
     drop(_guard);
 
     let reply_started = Instant::now();
-    ctx.send(CreateReply::default().embed(embeds::success("ข้ามเพลงแล้ว", "กำลังเล่นเพลงถัดไปในคิว")))
-        .await?;
+    ctx.send(CreateReply::default().embed(embeds::success(
+        "Track skipped",
+        "Now playing the next track in the queue.",
+    )))
+    .await?;
     let reply_ms = reply_started.elapsed();
 
     tracing::info!(
@@ -68,8 +71,8 @@ pub async fn stop(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
     drop(_guard);
 
     ctx.send(CreateReply::default().embed(embeds::success(
-        "หยุดเล่นเพลงแล้ว",
-        "ล้างคิวเพลงเรียบร้อย ใช้ /leave เพื่อออกจากห้องเสียง",
+        "Playback stopped",
+        "Queue cleared. Use /leave to disconnect from the voice channel.",
     )))
     .await?;
 

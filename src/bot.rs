@@ -79,12 +79,18 @@ pub async fn on_error(error: FrameworkError<'_, BotData, BotError>) {
 
     let message = match &error {
         FrameworkError::Command { error, .. } => error.user_message(),
-        FrameworkError::GuildOnly { .. } => "คำสั่งนี้ใช้ได้เฉพาะในเซิร์ฟเวอร์",
-        FrameworkError::MissingBotPermissions { .. } => "บอทไม่มีสิทธิ์ที่จำเป็นสำหรับคำสั่งนี้",
-        FrameworkError::MissingUserPermissions { .. } => "คุณไม่มีสิทธิ์ที่จำเป็นสำหรับคำสั่งนี้",
-        FrameworkError::ArgumentParse { .. } => "รูปแบบคำสั่งหรือข้อมูลที่ป้อนไม่ถูกต้อง",
-        FrameworkError::CommandPanic { .. } => "เกิดข้อผิดพลาดภายใน กรุณาลองใหม่ในภายหลัง",
-        _ => "เกิดข้อผิดพลาด กรุณาลองใหม่ในภายหลัง",
+        FrameworkError::GuildOnly { .. } => "This command can only be used in a server.",
+        FrameworkError::MissingBotPermissions { .. } => {
+            "The bot lacks the permissions required for this command."
+        }
+        FrameworkError::MissingUserPermissions { .. } => {
+            "You lack the permissions required for this command."
+        }
+        FrameworkError::ArgumentParse { .. } => "Invalid command syntax or input.",
+        FrameworkError::CommandPanic { .. } => {
+            "An internal error occurred. Please try again later."
+        }
+        _ => "Something went wrong. Please try again later.",
     };
 
     let reply = poise::CreateReply::default()
