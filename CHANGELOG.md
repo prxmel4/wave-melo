@@ -7,6 +7,13 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-28
+
+### Fixed
+
+- Refreshed `Cargo.lock` so the v0.7.0 dependency manifest matches the declared
+  package version and all `--locked` gates succeed from a clean checkout.
+
 ## [0.7.0] - 2026-11-28
 
 ### Added
