@@ -17,7 +17,9 @@ use crate::playback::ops::{
     require_player, require_same_voice, set_paused, set_volume, MAX_VOLUME, MIN_VOLUME,
 };
 use crate::state::{BotData, GuildSession};
-use crate::ui::components::{control_rows, parse_control_custom_id, ControlOp};
+use crate::ui::components::{
+    control_rows, parse_control_custom_id, parse_queue_custom_id, ControlOp,
+};
 use crate::ui::embeds;
 use crate::ui::now_playing;
 
@@ -41,6 +43,9 @@ pub async fn handle_component(
     data: &BotData,
 ) -> Result<(), BotError> {
     let raw = component.data.custom_id.as_str();
+    if raw.starts_with("wavemelo:queue:") {
+        return handle_queue_page(ctx, component, data).await;
+    }
     if !raw.starts_with(PREFIX) {
         return Ok(());
     }
@@ -109,6 +114,54 @@ pub async fn handle_component(
     };
     if let Err(error) = component.edit_response(&ctx.http, builder).await {
         tracing::warn!(error = ?error, "failed to update component response");
+    }
+    Ok(())
+}
+
+/// Render a queue page from a navigation button. Read-only; no voice gate.
+async fn handle_queue_page(
+    ctx: &Context,
+    component: &ComponentInteraction,
+    data: &BotData,
+) -> Result<(), BotError> {
+    let (target_guild, page) = match parse_queue_custom_id(&component.data.custom_id) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            reject(ctx, component, error.user_message()).await;
+            return Ok(());
+        }
+    };
+    let Some(guild_id) = component.guild_id else {
+        reject(
+            ctx,
+            component,
+            "Queue pages are only available in a server.",
+        )
+        .await;
+        return Ok(());
+    };
+    if guild_id.get() != target_guild {
+        reject(ctx, component, "This queue page belongs to another server.").await;
+        return Ok(());
+    }
+
+    component
+        .create_response(&ctx.http, CreateInteractionResponse::Acknowledge)
+        .await?;
+
+    let builder = match crate::commands::queue::collect_snapshot(data, guild_id).await {
+        Ok(snapshot) => {
+            let requested = usize::try_from(page).unwrap_or(usize::MAX);
+            let (embed, rows) =
+                crate::commands::queue::render_page_for(&snapshot, requested, guild_id.get());
+            EditInteractionResponse::new().embed(embed).components(rows)
+        }
+        Err(error) => EditInteractionResponse::new()
+            .embed(embeds::error("Queue unavailable", error.user_message()))
+            .components(Vec::new()),
+    };
+    if let Err(error) = component.edit_response(&ctx.http, builder).await {
+        tracing::warn!(error = ?error, "failed to update queue page");
     }
     Ok(())
 }

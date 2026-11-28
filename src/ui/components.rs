@@ -104,9 +104,54 @@ pub fn control_rows(guild_id: u64, generation: u64, paused: bool) -> Vec<CreateA
     ])]
 }
 
+/// Build a queue-page custom ID under Discord's 100-character limit.
+pub fn queue_custom_id(guild_id: u64, page: u64) -> String {
+    format!("wavemelo:queue:{guild_id}:{page}")
+}
+
+/// Parse a queue-page custom ID strictly.
+pub fn parse_queue_custom_id(raw: &str) -> Result<(u64, u64), BotError> {
+    if raw.len() > 100 {
+        return Err(BotError::InvalidComponent("custom ID too long".to_owned()));
+    }
+    let parts = raw.split(':').collect::<Vec<_>>();
+    match parts.as_slice() {
+        ["wavemelo", "queue", guild_id, page] => {
+            Ok((parse_canonical_u64(guild_id)?, parse_canonical_u64(page)?))
+        }
+        _ => Err(BotError::InvalidComponent("malformed custom ID".to_owned())),
+    }
+}
+
+/// Build navigation buttons for a queue page.
+pub fn queue_rows(guild_id: u64, page: u64, pages: u64) -> Vec<CreateActionRow> {
+    let target = |number: u64| queue_custom_id(guild_id, number);
+    vec![CreateActionRow::Buttons(vec![
+        CreateButton::new(target(1))
+            .label("First")
+            .style(ButtonStyle::Secondary)
+            .disabled(page <= 1),
+        CreateButton::new(target(page.saturating_sub(1)))
+            .label("Previous")
+            .style(ButtonStyle::Secondary)
+            .disabled(page <= 1),
+        CreateButton::new(target((page + 1).min(pages)))
+            .label("Next")
+            .style(ButtonStyle::Secondary)
+            .disabled(page >= pages),
+        CreateButton::new(target(pages))
+            .label("Last")
+            .style(ButtonStyle::Secondary)
+            .disabled(page >= pages),
+    ])]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{control_custom_id, parse_control_custom_id, ControlOp};
+    use super::{
+        control_custom_id, parse_control_custom_id, parse_queue_custom_id, queue_custom_id,
+        queue_rows, ControlOp,
+    };
     use crate::error::BotError;
 
     #[test]
@@ -152,5 +197,25 @@ mod tests {
             parse_control_custom_id(&long),
             Err(BotError::InvalidComponent(_))
         ));
+    }
+
+    #[test]
+    fn queue_ids_round_trip_and_navigate() {
+        let id = queue_custom_id(123, 4);
+        assert!(id.len() <= 100);
+        assert_eq!(parse_queue_custom_id(&id).unwrap(), (123, 4));
+        for invalid in [
+            "wavemelo:queue:01:2",
+            "wavemelo:queue:1:-2",
+            "wavemelo:queue:1",
+            "wavemelo:ctrl:1:2:skip",
+        ] {
+            assert!(matches!(
+                parse_queue_custom_id(invalid),
+                Err(BotError::InvalidComponent(_))
+            ));
+        }
+        let rows = queue_rows(1, 1, 3);
+        assert_eq!(rows.len(), 1);
     }
 }

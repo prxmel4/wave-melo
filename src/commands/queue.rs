@@ -2,18 +2,22 @@ use std::collections::VecDeque;
 
 use lavalink_rs::model::track::TrackData;
 use poise::CreateReply;
+use serenity::all::{CreateActionRow, CreateEmbed};
+use serenity::model::id::GuildId;
 
 use crate::audio::loader::{track_duration, track_url};
 use crate::error::BotError;
 use crate::playback::ops::require_same_voice;
-use crate::queue::{jump_plan, move_indices, reordered, zero_based};
-use crate::state::BotData;
+use crate::queue::{
+    clamp_page, jump_plan, move_indices, page_bounds, page_count, reordered, shuffle, time_seed,
+    zero_based,
+};
+use crate::state::{BotData, LoopMode};
+use crate::ui::components::queue_rows;
 use crate::ui::embeds::{self, QueueEntryView};
 
-const PAGE_SIZE: usize = 10;
-
 /// Owned display data for one queue row.
-type Row = (String, String, String, Option<std::time::Duration>);
+pub type Row = (String, String, String, Option<std::time::Duration>);
 
 fn requester_of(track: &TrackData) -> String {
     track
@@ -34,61 +38,78 @@ fn row_of(track: &TrackData) -> Row {
     )
 }
 
-/// Show the current track and the next queued tracks.
-#[poise::command(slash_command, guild_only)]
-pub async fn queue(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotError> {
-    let guild_id = ctx
-        .guild_id()
-        .ok_or_else(|| BotError::Voice("this command must be used in a guild".to_owned()))?;
+/// Owned snapshot of everything needed to render any queue page.
+pub struct QueueSnapshot {
+    pub current: Option<Row>,
+    pub rows: Vec<Row>,
+    pub total: usize,
+}
 
-    let data = ctx.data();
+/// Read the current track and queued rows from Lavalink.
+pub async fn collect_snapshot(
+    data: &BotData,
+    guild_id: GuildId,
+) -> Result<QueueSnapshot, BotError> {
     let (current, queued) = match data.lavalink.get_player_context(guild_id.get()) {
         Some(player_ctx) => {
             let player = player_ctx
                 .get_player()
                 .await
-                .map_err(|e| BotError::Lavalink(e.to_string()))?;
+                .map_err(|error| BotError::Lavalink(error.to_string()))?;
             let queued = player_ctx
                 .get_queue()
                 .get_queue()
                 .await
-                .map_err(|e| BotError::Lavalink(e.to_string()))?;
+                .map_err(|error| BotError::Lavalink(error.to_string()))?;
             (player.track, queued)
         }
         None => (None, VecDeque::new()),
     };
+    Ok(QueueSnapshot {
+        current: current.as_ref().map(row_of),
+        total: queued.len(),
+        rows: queued.iter().map(|item| row_of(&item.track)).collect(),
+    })
+}
 
-    let current_row = current.as_ref().map(row_of);
-    let queued_rows: Vec<Row> = queued
-        .iter()
-        .take(PAGE_SIZE)
-        .map(|item| row_of(&item.track))
-        .collect();
+/// Render a bounded queue page and its navigation buttons for a guild.
+pub fn render_page_for(
+    snapshot: &QueueSnapshot,
+    page: usize,
+    guild_id: u64,
+) -> (CreateEmbed, Vec<CreateActionRow>) {
+    let pages = page_count(snapshot.total);
+    let page = clamp_page(page, pages);
+    let (start, end) = page_bounds(page, snapshot.total);
+    let current_view = snapshot.current.as_ref().map(view_of);
+    let visible: Vec<QueueEntryView<'_>> = snapshot.rows[start..end].iter().map(view_of).collect();
+    let mut embed = embeds::queue(current_view.as_ref(), &visible, snapshot.total);
+    embed = embed.footer(serenity::all::CreateEmbedFooter::new(format!(
+        "Page {page} of {pages} | {} tracks in queue",
+        snapshot.total
+    )));
+    (embed, queue_rows(guild_id, page as u64, pages as u64))
+}
 
-    let current_view = current_row
-        .as_ref()
-        .map(|(title, url, requester, duration)| QueueEntryView {
-            title,
-            url: Some(url),
-            requester,
-            duration: *duration,
-        });
-    let views: Vec<QueueEntryView<'_>> = queued_rows
-        .iter()
-        .map(|(title, url, requester, duration)| QueueEntryView {
-            title,
-            url: Some(url),
-            requester,
-            duration: *duration,
-        })
-        .collect();
+fn view_of(row: &Row) -> QueueEntryView<'_> {
+    QueueEntryView {
+        title: &row.0,
+        url: Some(&row.1),
+        requester: &row.2,
+        duration: row.3,
+    }
+}
 
-    ctx.send(CreateReply::default().embed(embeds::queue(
-        current_view.as_ref(),
-        &views,
-        queued.len(),
-    )))
-    .await?;
+/// Show the current track and the first page of queued tracks.
+#[poise::command(slash_command, guild_only)]
+pub async fn queue(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotError> {
+    let guild_id = command_guild(ctx)?;
+    let data = ctx.data();
+    let snapshot = collect_snapshot(data, guild_id).await?;
+    let (embed, rows) = render_page_for(&snapshot, 1, guild_id.get());
+
+    ctx.send(CreateReply::default().embed(embed).components(rows))
+        .await?;
     Ok(())
 }
 
@@ -260,6 +281,61 @@ pub async fn queueclear(ctx: poise::Context<'_, BotData, BotError>) -> Result<()
     ctx.send(CreateReply::default().embed(embeds::success(
         "Queue cleared",
         "All queued tracks were removed. The current track keeps playing.",
+    )))
+    .await?;
+    Ok(())
+}
+
+/// Randomize the order of upcoming tracks.
+#[poise::command(slash_command, guild_only)]
+pub async fn shuffleq(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotError> {
+    let guild_id = command_guild(ctx)?;
+    require_same_voice(
+        ctx.cache(),
+        guild_id,
+        ctx.author().id,
+        ctx.cache().current_user().id,
+    )?;
+
+    let data = ctx.data();
+    let lock = data.guild_lock(guild_id).await;
+    let _guard = lock.lock().await;
+    let player_ctx = data
+        .lavalink
+        .get_player_context(guild_id.get())
+        .ok_or(BotError::QueueEmpty)?;
+
+    // Shuffling injected loop copies would break marker-based replenishment.
+    if data
+        .guild_states
+        .session(guild_id.get())
+        .loop_control
+        .mode()
+        != LoopMode::Off
+    {
+        return Err(BotError::Voice(
+            "turn off loop mode before shuffling".to_owned(),
+        ));
+    }
+
+    let queue_ref = player_ctx.get_queue();
+    let mut queued = queue_ref
+        .get_queue()
+        .await
+        .map_err(|error| BotError::Lavalink(error.to_string()))?;
+    if queued.len() < 2 {
+        return Err(BotError::QueueEmpty);
+    }
+    let count = queued.len();
+    shuffle(&mut queued, time_seed());
+    queue_ref
+        .replace(queued)
+        .map_err(|error| BotError::Lavalink(error.to_string()))?;
+    drop(_guard);
+
+    ctx.send(CreateReply::default().embed(embeds::success(
+        "Queue shuffled",
+        format!("Randomized {count} upcoming tracks."),
     )))
     .await?;
     Ok(())

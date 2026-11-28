@@ -1,3 +1,4 @@
+pub mod history;
 pub mod ping;
 pub mod play;
 pub mod playback;
@@ -23,6 +24,8 @@ pub fn commands() -> Vec<poise::Command<crate::state::BotData, crate::error::Bot
         queue::queuejump(),
         queue::queuemove(),
         queue::queueclear(),
+        queue::shuffleq(),
+        history::history(),
         voice::join(),
         voice::leave(),
     ]

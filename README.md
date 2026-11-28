@@ -139,7 +139,13 @@ cargo run
 | `/seek <position>` | Seek to `90`, `01:30`, or `00:01:30` seconds |
 | `/nowplaying` | Show track, position, volume, loop, filter, and status |
 | `/loop <off\|track\|queue>` | Set repeat mode for this guild |
-| `/queue` | Show the current track and the next queued tracks |
+| `/queue` | Show the current track and the first page of queued tracks |
+| `/queueremove <index>` | Remove a queued track by its 1-based position |
+| `/queuejump <index>` | Play a queued track immediately |
+| `/queuemove <from> <to>` | Move a queued track to a new position |
+| `/queueclear` | Remove all queued tracks |
+| `/shuffleq` | Randomize upcoming tracks (loop mode must be off) |
+| `/history` | Show recently played tracks for this guild |
 | `/join` | Join your current voice channel |
 | `/leave` | Leave voice and clear the queue |
 
