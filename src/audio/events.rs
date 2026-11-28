@@ -34,6 +34,7 @@ pub fn on_track_start(
 ) -> HandlerFuture {
     let guild_id = event.guild_id.0;
     let title = event.track.info.title.clone();
+    let identifier = event.track.info.identifier.clone();
     Box::pin(async move {
         tracing::info!(
             event = "track_start",
@@ -45,6 +46,7 @@ pub fn on_track_start(
             let session = registry.session(guild_id);
             let mut details = session.details.lock().await;
             details.remember_track(title);
+            details.remember_identifier(identifier);
             details.idle_generation = details.idle_generation.wrapping_add(1);
             details.bump_control_generation();
             drop(details);
@@ -113,6 +115,9 @@ pub fn on_track_end(
                 }
             }
         }
+
+        // A natural finish with an empty queue may resolve a related track.
+        crate::audio::autoplay::maybe_start(&client, &registry, guild_id, &reason, &track).await;
 
         // Any track end can leave the player idle: re-evaluate the countdown.
         if let Some(deps) = crate::audio::idle::IdleDeps::from_registry(&client, &registry) {
@@ -212,6 +217,9 @@ pub async fn handle_voice_event(
                 && data.lavalink.get_player_context(guild_id.get()).is_some()
             {
                 tracing::info!(guild_id = %guild_id, "bot removed from voice channel");
+                if let Some(session) = data.guild_states.existing_session(guild_id.get()) {
+                    session.autoplay.cancel();
+                }
                 if let Err(error) = data.lavalink.delete_player(guild_id.get()).await {
                     tracing::warn!(guild_id = %guild_id, error = %error, "failed to clean up player");
                 }

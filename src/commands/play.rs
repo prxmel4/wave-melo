@@ -39,6 +39,11 @@ pub async fn play(
     let lock = data.guild_lock(guild_id).await;
     let _guard = lock.lock().await;
 
+    // A manual play supersedes any pending autoplay resolution.
+    if let Some(session) = data.guild_states.existing_session(guild_id.get()) {
+        session.autoplay.cancel();
+    }
+
     // Ensure a player context exists (joins voice if needed).
     let player_ctx =
         ensure_player_context(ctx.serenity_context(), data, guild_id, channel_id).await?;

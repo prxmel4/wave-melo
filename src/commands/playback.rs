@@ -36,6 +36,7 @@ pub async fn skip(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
         .map_err(|e| BotError::Track(e.to_string()))?;
     {
         let session = data.guild_states.session(guild_id.get());
+        session.autoplay.cancel();
         session.details.lock().await.bump_control_generation();
     }
     drop(_guard);
@@ -77,6 +78,8 @@ pub async fn stop(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), BotE
             tracing::warn!(guild_id = %guild_id, error = %error, "failed to stop playback");
         }
         let session = data.guild_states.session(guild_id.get());
+        // A manual stop must abort any pending autoplay resolution.
+        session.autoplay.cancel();
         session.details.lock().await.bump_control_generation();
     }
     drop(_guard);

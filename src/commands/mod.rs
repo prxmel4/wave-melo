@@ -1,3 +1,4 @@
+pub mod autoplay;
 pub mod filter;
 pub mod history;
 pub mod mode247;
@@ -29,6 +30,7 @@ pub fn commands() -> Vec<poise::Command<crate::state::BotData, crate::error::Bot
         queue::shuffleq(),
         history::history(),
         filter::filter(),
+        autoplay::autoplay(),
         mode247::mode_247(),
         voice::join(),
         voice::leave(),

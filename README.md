@@ -17,6 +17,7 @@ YouTube playback works **without a Google OAuth login**: a self-hosted
 - Unicode-safe truncation and markdown-safe embeds
 - Per-guild operation locks to serialize playback transitions
 - Smart 180-second auto-leave when alone or idle, with a `/247` override
+- `/autoplay` related-track engine with YouTube Mix resolution and history dedup
 - JSON structured logs through `RUST_LOG`
 - Graceful shutdown on SIGINT/SIGTERM
 - Docker Compose deployment with a health-checked Lavalink node
@@ -142,6 +143,7 @@ cargo run
 | `/loop <off\|track\|queue>` | Set repeat mode for this guild |
 | `/filter <preset>` | Apply bassboost, nightcore, vaporwave, 8d, karaoke, or clear |
 | `/247` | Toggle 24/7 mode (suppresses the 180-second auto-leave) |
+| `/autoplay` | Toggle autoplay of related tracks when the queue runs out |
 | `/queue` | Show the current track and the first page of queued tracks |
 | `/queueremove <index>` | Remove a queued track by its 1-based position |
 | `/queuejump <index>` | Play a queued track immediately |
@@ -173,6 +175,22 @@ The bot leaves voice automatically after **180 seconds** of inactivity:
 The countdown is cancelled immediately when a listener joins, a new track
 starts, or `/247` is enabled. Use `/247` to keep the bot connected even when
 idle; toggle it again to restore auto-leave.
+
+## Autoplay
+
+When autoplay is enabled and a track finishes naturally with an empty queue
+and loop mode off, wavemelo resolves a related track in the background:
+
+1. The finished track's YouTube ID seeds a **Mix playlist**
+   (`https://www.youtube.com/watch?v=<id>&list=RD<id>`).
+2. If the Mix yields nothing new, a `ytsearch:` query built from the track's
+   title and artist is used as a fallback.
+
+Candidates are deduplicated against the last 20 played track identifiers, so
+the seed video and recently played songs are never replayed. Resolution runs
+in a cancellable background task: `/play`, `/skip`, `/stop`, `/leave`, or a
+forced disconnect aborts it immediately. After three consecutive failures
+autoplay pauses itself until re-enabled with `/autoplay`.
 
 ## Development
 

@@ -8,6 +8,7 @@ use lavalink_rs::prelude::LavalinkClient;
 use serenity::model::id::GuildId;
 use tokio::sync::Mutex;
 
+use crate::audio::autoplay::AutoplayControl;
 use crate::audio::idle::IdleControl;
 use crate::config::AppConfig;
 
@@ -161,7 +162,11 @@ pub struct GuildState {
     pub active_filter: Option<String>,
     pub mode_247: bool,
     pub autoplay: bool,
+    /// Consecutive autoplay resolution failures (resets on success or toggle).
+    pub autoplay_failures: u8,
     pub recent_tracks: VecDeque<String>,
+    /// Identifier-based history for autoplay dedup (bounded, separate from titles).
+    pub recent_identifiers: VecDeque<String>,
     pub idle_generation: u64,
     /// Invalidates interactive controls after a playback transition.
     pub control_generation: u64,
@@ -178,7 +183,9 @@ impl Default for GuildState {
             active_filter: None,
             mode_247: false,
             autoplay: false,
+            autoplay_failures: 0,
             recent_tracks: VecDeque::new(),
+            recent_identifiers: VecDeque::new(),
             idle_generation: 0,
             control_generation: 0,
             manual_transition: false,
@@ -188,12 +195,23 @@ impl Default for GuildState {
 }
 
 impl GuildState {
-    /// Remember a track identifier with a fixed upper bound.
-    pub fn remember_track(&mut self, identifier: String) {
-        if self.recent_tracks.back() == Some(&identifier) {
+    /// Remember a track identifier for autoplay dedup with a fixed upper bound.
+    pub fn remember_identifier(&mut self, identifier: String) {
+        if self.recent_identifiers.back() == Some(&identifier) {
             return;
         }
-        self.recent_tracks.push_back(identifier);
+        self.recent_identifiers.push_back(identifier);
+        while self.recent_identifiers.len() > MAX_RECENT_TRACKS {
+            self.recent_identifiers.pop_front();
+        }
+    }
+
+    /// Remember a display title with a fixed upper bound.
+    pub fn remember_track(&mut self, title: String) {
+        if self.recent_tracks.back() == Some(&title) {
+            return;
+        }
+        self.recent_tracks.push_back(title);
         while self.recent_tracks.len() > MAX_RECENT_TRACKS {
             self.recent_tracks.pop_front();
         }
@@ -227,6 +245,8 @@ pub struct GuildSession {
     pub details: Arc<Mutex<GuildState>>,
     /// Cancellable idle countdown for auto-leave.
     pub idle: IdleControl,
+    /// Cancellable autoplay task for related-track resolution.
+    pub autoplay: AutoplayControl,
 }
 
 impl Default for GuildSession {
@@ -235,6 +255,7 @@ impl Default for GuildSession {
             loop_control: LoopControl::default(),
             details: Arc::new(Mutex::new(GuildState::default())),
             idle: IdleControl::default(),
+            autoplay: AutoplayControl::default(),
         }
     }
 }
@@ -305,6 +326,7 @@ impl GuildStateRegistry {
             .remove(&guild_id)
         {
             session.idle.cancel();
+            session.autoplay.cancel();
         }
     }
 

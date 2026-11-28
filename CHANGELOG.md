@@ -7,6 +7,25 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-28
+
+### Added
+
+- `/autoplay` slash command toggles per-guild autoplay of related tracks.
+- `src/audio/autoplay.rs`: YouTube Mix resolution (`watch?v=<id>&list=RD<id>`)
+  with a `ytsearch:` title/artist fallback, identifier-based dedup against a
+  bounded 20-entry history, and a three-failure budget that pauses autoplay.
+- `recent_identifiers` history in guild state, recorded on every track start.
+- Cancellable `AutoplayControl` task slot with generation checks; the final
+  play is serialized under the per-guild operation lock and re-verified.
+
+### Changed
+
+- `on_track_end` spawns autoplay resolution for natural finishes with an empty
+  queue and loop mode off; resolution never blocks the event handler.
+- `/play`, `/skip`, `/stop`, and forced voice disconnects cancel any pending
+  autoplay task; `GuildStateRegistry::remove` cancels it on cleanup.
+
 ## [0.12.0] - 2026-11-28
 
 ### Added

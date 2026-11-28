@@ -1,3 +1,4 @@
+pub mod autoplay;
 pub mod client;
 pub mod events;
 pub mod filters;
