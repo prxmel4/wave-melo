@@ -35,8 +35,11 @@ pub fn channel_is_cached(cache: &Cache, guild_id: GuildId, channel_id: ChannelId
 }
 
 /// Send a voice state update (opcode 4) to join, move, or leave a voice channel.
+///
+/// Takes the shard messenger directly so background tasks (idle timers) can
+/// disconnect without a per-event Serenity `Context`.
 pub fn send_voice_state_update(
-    ctx: &serenity::client::Context,
+    shard: &serenity::gateway::ShardMessenger,
     guild_id: GuildId,
     channel_id: Option<ChannelId>,
     self_deaf: bool,
@@ -54,7 +57,7 @@ pub fn send_voice_state_update(
 
     let json =
         serde_json::to_string(&payload).map_err(|error| BotError::Voice(error.to_string()))?;
-    ctx.shard.websocket_message(Message::Text(json));
+    shard.websocket_message(Message::Text(json));
     Ok(())
 }
 
@@ -89,7 +92,7 @@ pub async fn ensure_player_context(
 
         // Move the bot; Discord re-sends the voice handshake events, which
         // lavalink-rs accumulates for `get_connection_info`.
-        send_voice_state_update(ctx, guild_id, Some(channel_id), true, false)?;
+        send_voice_state_update(&ctx.shard, guild_id, Some(channel_id), true, false)?;
         let info = wait_connection_info(data, guild_id).await?;
         data.lavalink
             .update_player(
@@ -105,7 +108,7 @@ pub async fn ensure_player_context(
         return Ok(player);
     }
 
-    send_voice_state_update(ctx, guild_id, Some(channel_id), true, false)?;
+    send_voice_state_update(&ctx.shard, guild_id, Some(channel_id), true, false)?;
     let info = wait_connection_info(data, guild_id).await?;
     data.lavalink
         .create_player_context(guild_id, info)

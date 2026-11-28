@@ -40,6 +40,15 @@ pub async fn event_handler(
             framework
                 .serenity_context
                 .set_presence(Some(ActivityData::listening("/play")), OnlineStatus::Online);
+
+            // Install runtime handles so event handlers and timers can reach the cache.
+            let handles = crate::state::RuntimeHandles {
+                shard: framework.serenity_context.shard.clone(),
+                cache: Arc::clone(&framework.serenity_context.cache),
+                guild_ops: Arc::clone(&data.guild_ops),
+            };
+            data.guild_states.install_handles(handles);
+
             tracing::info!(
                 bot_user = %data_about_bot.user.tag(),
                 guild_count = data_about_bot.guilds.len(),
@@ -48,7 +57,7 @@ pub async fn event_handler(
             );
         }
         FullEvent::VoiceStateUpdate { .. } | FullEvent::VoiceServerUpdate { .. } => {
-            handle_voice_event(event, data, framework.bot_id()).await;
+            handle_voice_event(event, framework.serenity_context, data, framework.bot_id()).await;
         }
         FullEvent::InteractionCreate {
             interaction: Interaction::Component(component),

@@ -47,6 +47,11 @@ pub fn on_track_start(
             details.remember_track(title);
             details.idle_generation = details.idle_generation.wrapping_add(1);
             details.bump_control_generation();
+            drop(details);
+            // A track started: re-evaluate the idle countdown.
+            if let Some(deps) = crate::audio::idle::IdleDeps::from_registry(&client, &registry) {
+                crate::audio::idle::refresh(deps, guild_id).await;
+            }
         }
     })
 }
@@ -70,43 +75,48 @@ pub fn on_track_end(
             "track ended"
         );
 
-        if reason != TrackEndReason::Finished {
-            return;
-        }
         let Ok(registry) = client.data::<GuildStateRegistry>() else {
             return;
         };
         let Some(session) = registry.existing_session(guild_id) else {
             return;
         };
-        let Some(player_ctx) = client.get_player_context(guild_id) else {
-            return;
-        };
-        let queue = player_ctx.get_queue();
-        let data = track.user_data.as_ref();
 
-        match session.loop_control.mode() {
-            LoopMode::Off => {}
-            LoopMode::Track => {
-                // Only replenish injected copies; the first natural end is
-                // covered by the two copies queued when track loop was enabled.
-                if has_loop_marker(data) {
-                    if let Err(error) = queue.push_to_front(loop_copy(&track)) {
-                        tracing::warn!(guild_id = %guild_id, error = %error, "failed to replenish track loop");
+        // Loop replenishment only applies to natural ends; the idle refresh
+        // below applies to every end reason (including manual stops).
+        if reason == TrackEndReason::Finished {
+            if let Some(player_ctx) = client.get_player_context(guild_id) {
+                let queue = player_ctx.get_queue();
+                let data = track.user_data.as_ref();
+                match session.loop_control.mode() {
+                    LoopMode::Off => {}
+                    LoopMode::Track => {
+                        // Only replenish injected copies; the first natural end is
+                        // covered by the two copies queued when track loop was enabled.
+                        if has_loop_marker(data) {
+                            if let Err(error) = queue.push_to_front(loop_copy(&track)) {
+                                tracing::warn!(guild_id = %guild_id, error = %error, "failed to replenish track loop");
+                            }
+                        }
+                    }
+                    LoopMode::Queue => {
+                        // The final entry of each injected cycle carries the marker.
+                        if has_queue_cycle_marker(data) {
+                            let cycle = session.loop_control.snapshot();
+                            if cycle.is_empty() {
+                                tracing::warn!(guild_id = %guild_id, "queue loop snapshot is empty");
+                            } else if let Err(error) = queue.append(cycle) {
+                                tracing::warn!(guild_id = %guild_id, error = %error, "failed to replenish queue loop");
+                            }
+                        }
                     }
                 }
             }
-            LoopMode::Queue => {
-                // The final entry of each injected cycle carries the marker.
-                if has_queue_cycle_marker(data) {
-                    let cycle = session.loop_control.snapshot();
-                    if cycle.is_empty() {
-                        tracing::warn!(guild_id = %guild_id, "queue loop snapshot is empty");
-                    } else if let Err(error) = queue.append(cycle) {
-                        tracing::warn!(guild_id = %guild_id, error = %error, "failed to replenish queue loop");
-                    }
-                }
-            }
+        }
+
+        // Any track end can leave the player idle: re-evaluate the countdown.
+        if let Some(deps) = crate::audio::idle::IdleDeps::from_registry(&client, &registry) {
+            crate::audio::idle::refresh(deps, guild_id).await;
         }
     })
 }
@@ -178,6 +188,7 @@ pub fn on_websocket_closed(
 /// `LavalinkClient::get_connection_info`.
 pub async fn handle_voice_event(
     event: &FullEvent,
+    ctx: &serenity::client::Context,
     data: &BotData,
     bot_id: serenity::model::id::UserId,
 ) {
@@ -205,6 +216,10 @@ pub async fn handle_voice_event(
                     tracing::warn!(guild_id = %guild_id, error = %error, "failed to clean up player");
                 }
             }
+
+            // Any voice state change may affect the idle countdown.
+            let deps = crate::audio::idle::IdleDeps::from_bot_data(data, ctx);
+            crate::audio::idle::refresh(deps, guild_id.get()).await;
         }
         FullEvent::VoiceServerUpdate { event } => {
             let Some(guild_id) = event.guild_id else {

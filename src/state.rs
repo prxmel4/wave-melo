@@ -8,6 +8,7 @@ use lavalink_rs::prelude::LavalinkClient;
 use serenity::model::id::GuildId;
 use tokio::sync::Mutex;
 
+use crate::audio::idle::IdleControl;
 use crate::config::AppConfig;
 
 /// Hard cap for cached loop snapshots and track history.
@@ -224,6 +225,8 @@ impl GuildState {
 pub struct GuildSession {
     pub loop_control: LoopControl,
     pub details: Arc<Mutex<GuildState>>,
+    /// Cancellable idle countdown for auto-leave.
+    pub idle: IdleControl,
 }
 
 impl Default for GuildSession {
@@ -231,7 +234,25 @@ impl Default for GuildSession {
         Self {
             loop_control: LoopControl::default(),
             details: Arc::new(Mutex::new(GuildState::default())),
+            idle: IdleControl::default(),
         }
+    }
+}
+
+/// Runtime handles shared with background tasks and event handlers.
+///
+/// Serenity's `Context` is per-event; these Arc-wrapped clones let timers
+/// and Lavalink callbacks reach the cache and shard messenger.
+#[derive(Clone)]
+pub struct RuntimeHandles {
+    pub shard: serenity::gateway::ShardMessenger,
+    pub cache: Arc<serenity::cache::Cache>,
+    pub guild_ops: Arc<Mutex<HashMap<GuildId, Arc<Mutex<()>>>>>,
+}
+
+impl std::fmt::Debug for RuntimeHandles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeHandles").finish_non_exhaustive()
     }
 }
 
@@ -239,6 +260,8 @@ impl Default for GuildSession {
 #[derive(Clone, Default)]
 pub struct GuildStateRegistry {
     sessions: Arc<StdRwLock<HashMap<u64, Arc<GuildSession>>>>,
+    /// Runtime handles installed after the bot is ready.
+    handles: Arc<StdRwLock<Option<RuntimeHandles>>>,
 }
 
 impl GuildStateRegistry {
@@ -275,10 +298,30 @@ impl GuildStateRegistry {
 
     /// Drop all state for a guild after a disconnect.
     pub fn remove(&self, guild_id: u64) {
-        self.sessions
+        if let Some(session) = self
+            .sessions
             .write()
             .unwrap_or_else(|error| error.into_inner())
-            .remove(&guild_id);
+            .remove(&guild_id)
+        {
+            session.idle.cancel();
+        }
+    }
+
+    /// Install runtime handles so event handlers and timers can reach the cache.
+    pub fn install_handles(&self, handles: RuntimeHandles) {
+        *self
+            .handles
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = Some(handles);
+    }
+
+    /// Read the installed runtime handles, if any.
+    pub fn runtime(&self) -> Option<RuntimeHandles> {
+        self.handles
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
     }
 }
 

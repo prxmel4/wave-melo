@@ -54,7 +54,7 @@ pub async fn leave(ctx: poise::Context<'_, BotData, BotError>) -> Result<(), Bot
 
     // Send voice state update to disconnect from the channel.
     if let Err(error) =
-        send_voice_state_update(ctx.serenity_context(), guild_id, None, false, false)
+        send_voice_state_update(&ctx.serenity_context().shard, guild_id, None, false, false)
     {
         tracing::warn!(guild_id = %guild_id, error = %error, "failed to send voice disconnect");
     }

@@ -7,6 +7,29 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-28
+
+### Added
+
+- `/247` slash command toggles per-guild 24/7 mode, suppressing auto-leave.
+- Smart 180-second auto-leave when the bot is alone in a voice channel or idle
+  with an empty queue, driven by a cancellable Tokio task per guild.
+- `src/audio/idle.rs` with a pure decision function, cached listener counter,
+  and a generation-based `IdleControl` primitive.
+
+### Changed
+
+- `on_track_end` re-evaluates the idle countdown for every end reason
+  (including manual `/stop`); loop replenishment remains scoped to natural
+  `Finished` ends.
+- `on_track_start` and voice-state updates refresh the idle countdown.
+- `send_voice_state_update` takes the shard messenger directly so background
+  tasks can disconnect without a per-event Serenity `Context`.
+- The `Ready` handler installs runtime handles in the guild-state registry for
+  use by Lavalink event handlers and background timers.
+- `GuildStateRegistry::remove` cancels any armed countdown before dropping the
+  session.
+
 ## [0.11.0] - 2026-11-28
 
 ### Added

@@ -16,6 +16,7 @@ YouTube playback works **without a Google OAuth login**: a self-hosted
 - Playlists and albums, capped at 200 queued tracks per guild
 - Unicode-safe truncation and markdown-safe embeds
 - Per-guild operation locks to serialize playback transitions
+- Smart 180-second auto-leave when alone or idle, with a `/247` override
 - JSON structured logs through `RUST_LOG`
 - Graceful shutdown on SIGINT/SIGTERM
 - Docker Compose deployment with a health-checked Lavalink node
@@ -140,6 +141,7 @@ cargo run
 | `/nowplaying` | Show track, position, volume, loop, filter, and status |
 | `/loop <off\|track\|queue>` | Set repeat mode for this guild |
 | `/filter <preset>` | Apply bassboost, nightcore, vaporwave, 8d, karaoke, or clear |
+| `/247` | Toggle 24/7 mode (suppresses the 180-second auto-leave) |
 | `/queue` | Show the current track and the first page of queued tracks |
 | `/queueremove <index>` | Remove a queued track by its 1-based position |
 | `/queuejump <index>` | Play a queued track immediately |
@@ -159,6 +161,18 @@ played titles without contacting external services.
 `/nowplaying` includes buttons for pause/resume, skip, stop, and volume steps.
 Controls require the same voice channel and expire automatically when the
 track changes; use `/nowplaying` again for fresh controls.
+
+## Auto-leave and 24/7 mode
+
+The bot leaves voice automatically after **180 seconds** of inactivity:
+
+- **Alone in the channel** — countdown runs regardless of playback state.
+- **Listeners present but idle** — countdown runs only when no track is
+  playing and the queue is empty.
+
+The countdown is cancelled immediately when a listener joins, a new track
+starts, or `/247` is enabled. Use `/247` to keep the bot connected even when
+idle; toggle it again to restore auto-leave.
 
 ## Development
 
