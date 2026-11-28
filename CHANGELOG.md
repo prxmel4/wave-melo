@@ -7,6 +7,26 @@ in `Cargo.toml`.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-28
+
+### Added
+
+- Per-guild session registry shared with Lavalink event handlers, with atomic
+  loop-mode state and bounded queue snapshots that never hold locks across
+  network operations.
+- `/loop <off|track|queue>` with buffered repeat copies so track and queue
+  looping survive Lavalink's automatic advance timing.
+- Internal loop markers are stripped from the real queue when loop mode
+  changes or is disabled, keeping user tracks authoritative.
+- Deterministic tests for loop transitions, bounded snapshots, marker handling,
+  and registry lifecycle.
+
+### Changed
+
+- `/nowplaying` now reports the guild's stored loop mode and active filter.
+- Lavalink user data now carries the guild state registry for safe event-side
+  coordination.
+
 ## [0.5.0] - 2026-11-28
 
 ### Added
